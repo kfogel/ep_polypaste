@@ -1,0 +1,14 @@
+{
+  "parts": [
+    {
+      "name": "main",
+      "hooks": {
+        "eejsBlock_mySettings.dropdowns": "ep_org_export/index:eejsBlockMySettingsDropdowns",
+        "clientVars": "ep_org_export/index"
+      },
+      "client_hooks": {
+        "postAceInit": "ep_org_export/static/js/index"
+      }
+    }
+  ]
+}

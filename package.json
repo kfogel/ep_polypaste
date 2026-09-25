@@ -1,0 +1,17 @@
+{
+  "name": "ep_org_export",
+  "version": "0.1.0",
+  "description": "Copying from a pad keeps list nesting: the clipboard gets TAB-indented text, Markdown, Org Mode, AsciiDoc, reStructuredText, MediaWiki, LaTeX, or HTML, as each user prefers.",
+  "keywords": ["ep", "etherpad", "plugin", "copy", "paste", "clipboard", "lists", "markdown", "org-mode", "asciidoc"],
+  "license": "Apache-2.0",
+  "author": "Karl Fogel <kfogel@opentechstrategies.com>",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "peerDependencies": {
+    "ep_etherpad-lite": ">=2.0.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}

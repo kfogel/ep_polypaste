@@ -1,0 +1,14 @@
+{
+  "ep_org_export.settings.format": "Copy format:",
+  "ep_org_export.format.tabs": "Plain text, TAB-indented",
+  "ep_org_export.format.tabs-markers": "Plain text, TAB-indented, with bullets/numbers",
+  "ep_org_export.format.markdown": "Markdown",
+  "ep_org_export.format.org": "Org Mode",
+  "ep_org_export.format.asciidoc": "AsciiDoc",
+  "ep_org_export.format.rst": "reStructuredText",
+  "ep_org_export.format.mediawiki": "MediaWiki",
+  "ep_org_export.format.latex": "LaTeX",
+  "ep_org_export.format.typst": "Typst",
+  "ep_org_export.format.html": "HTML source",
+  "ep_org_export.format.native": "Browser default (no conversion)"
+}
