@@ -22,7 +22,7 @@
 // To set the default for users who haven't chosen a format, add this to
 // settings.json:
 //
-//   "ep_org_export": {"defaultFormat": "markdown"}
+//   "ep_polypaste": {"defaultFormat": "markdown"}
 //
 // See the value of FORMATS in static/js/formats.js for a list of all
 // available formats.
@@ -32,10 +32,10 @@ const formats = require('./static/js/formats');
 const getConfig = () => {
   try {
     const mod = require('ep_etherpad-lite/node/utils/Settings');
-    return ((mod && mod.default) || mod).ep_org_export || {};
+    return ((mod && mod.default) || mod).ep_polypaste || {};
   } catch (err) {
     // Never let a configuration problem keep pads from loading.
-    console.error('[ep_org_export] could not read settings; using built-in defaults', err);
+    console.error('[ep_polypaste] could not read settings; using built-in defaults', err);
     return {};
   }
 };
@@ -45,12 +45,12 @@ const escapeHtml = (s) => String(s)
 
 exports.eejsBlockMySettingsDropdowns = (hookName, context) => {
   const options = formats.FORMATS.map(({id, label}) => (
-    `<option value="${escapeHtml(id)}" data-l10n-id="ep_org_export.format.${escapeHtml(id)}">` +
+    `<option value="${escapeHtml(id)}" data-l10n-id="ep_polypaste.format.${escapeHtml(id)}">` +
     `${escapeHtml(label)}</option>`)).join('');
   context.content += `
     <p class="dropdown-line">
-      <label for="ep_org_export-format" data-l10n-id="ep_org_export.settings.format">Copy format:</label>
-      <select id="ep_org_export-format">${options}</select>
+      <label for="ep_polypaste-format" data-l10n-id="ep_polypaste.settings.format">Copy format:</label>
+      <select id="ep_polypaste-format">${options}</select>
     </p>`;
 };
 
@@ -58,5 +58,5 @@ exports.clientVars = async (hookName, context) => {
   const config = getConfig();
   const defaultFormat = formats.isFormat(config.defaultFormat)
     ? config.defaultFormat : formats.DEFAULT_FORMAT;
-  return {ep_org_export: {defaultFormat}};
+  return {ep_polypaste: {defaultFormat}};
 };

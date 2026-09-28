@@ -3,11 +3,11 @@
     {
       "name": "main",
       "hooks": {
-        "eejsBlock_mySettings.dropdowns": "ep_org_export/index:eejsBlockMySettingsDropdowns",
-        "clientVars": "ep_org_export/index"
+        "eejsBlock_mySettings.dropdowns": "ep_polypaste/index:eejsBlockMySettingsDropdowns",
+        "clientVars": "ep_polypaste/index"
       },
       "client_hooks": {
-        "postAceInit": "ep_org_export/static/js/index"
+        "postAceInit": "ep_polypaste/static/js/index"
       }
     }
   ]

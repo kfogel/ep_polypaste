@@ -1,5 +1,5 @@
 {
-  "name": "ep_org_export",
+  "name": "ep_polypaste",
   "version": "0.1.0",
   "description": "Copying from a pad keeps list nesting: the clipboard gets TAB-indented text, Markdown, Org Mode, AsciiDoc, reStructuredText, MediaWiki, LaTeX, or HTML, as each user prefers.",
   "keywords": ["ep", "etherpad", "plugin", "copy", "paste", "clipboard", "lists", "markdown", "org-mode", "asciidoc"],

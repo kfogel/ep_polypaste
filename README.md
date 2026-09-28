@@ -99,7 +99,7 @@ As the Etherpad server administrator, run this from the Etherpad
 directory:
 
 ```
-  pnpm run plugins i --path /path/to/ep_org_export
+  pnpm run plugins i --path /path/to/ep_polypaste
 ```
 
 then restart Etherpad.  Restart Etherpad after upgrading the plugin,
@@ -112,7 +112,7 @@ by default.  To change this default, add this to Etherpad's
 `settings.json`:
 
 ```
-  "ep_org_export": {
+  "ep_polypaste": {
     "defaultFormat": "markdown"
   }
 ```

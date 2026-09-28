@@ -35,8 +35,8 @@
 
 const formats = require('./formats');
 
-const STORAGE_KEY = 'ep_org_export.format';
-const SELECT_ID = 'ep_org_export-format';
+const STORAGE_KEY = 'ep_polypaste.format';
+const SELECT_ID = 'ep_polypaste-format';
 
 // Set from the server's settings.json when the pad loads.
 let serverDefault = formats.DEFAULT_FORMAT;
@@ -79,9 +79,9 @@ const handleCopyOrCut = (evt, ace, isCut, readOnly) => {
       if (!rep.selStart || !rep.selEnd) return;
       model = formats.extractSelection(docFromRep(rep), rep.selStart, rep.selEnd);
       range = [rep.selStart.slice(), rep.selEnd.slice()];
-    }, 'ep_org_export_copy', true);
+    }, 'ep_polypaste_copy', true);
   } catch (err) {
-    console.error('[ep_org_export] could not read the selection; using browser default', err);
+    console.error('[ep_polypaste] could not read the selection; using browser default', err);
     return;
   }
   if (!model) return;
@@ -91,7 +91,7 @@ const handleCopyOrCut = (evt, ace, isCut, readOnly) => {
     text = formats.render(format, model);
     html = formats.renderClipboardHtml(model);
   } catch (err) {
-    console.error('[ep_org_export] could not convert the selection; using browser default', err);
+    console.error('[ep_polypaste] could not convert the selection; using browser default', err);
     return;
   }
   evt.clipboardData.setData('text/plain', text);
@@ -107,7 +107,7 @@ const handleCopyOrCut = (evt, ace, isCut, readOnly) => {
       editor.ace_updateBrowserSelectionFromRep();
       // Deleting may have split or joined numbered lists.
       if (editor.ace_renumberList(start[0] + 1) == null) editor.ace_renumberList(start[0]);
-    }, 'ep_org_export_cut', true);
+    }, 'ep_polypaste_cut', true);
   }
 };
 
@@ -124,7 +124,7 @@ const setUpSettingsMenu = () => {
 };
 
 exports.postAceInit = (hookName, {ace, clientVars}) => {
-  const cv = (clientVars && clientVars.ep_org_export) || {};
+  const cv = (clientVars && clientVars.ep_polypaste) || {};
   if (formats.isFormat(cv.defaultFormat)) serverDefault = cv.defaultFormat;
   const readOnly = !!(clientVars && clientVars.readonly);
 
@@ -133,7 +133,7 @@ exports.postAceInit = (hookName, {ace, clientVars}) => {
   const outer = document.querySelector('iframe[name="ace_outer"]');
   const inner = outer && outer.contentDocument.querySelector('iframe[name="ace_inner"]');
   if (!inner) {
-    console.error('[ep_org_export] editor iframe not found; copy/paste conversion disabled');
+    console.error('[ep_polypaste] editor iframe not found; copy/paste conversion disabled');
     return;
   }
   const innerDoc = inner.contentDocument;
