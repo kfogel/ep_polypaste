@@ -119,13 +119,48 @@ Use `none` in place of the identity transform:
    }
 ```
 
-I tested this by injecting the override into the page from the Puppeteer script
-above.  With `transform: none`, the reduced-motion run matches the
-no-preference run exactly (`listLeft: 1136, listTop: 450, listOnScreen: true`).
+`none` and `scale(1)` render identically, but `none` doesn't make
+`.popup-content` the containing block for fixed-position descendants.  The
+viewport becomes their containing block again, which is what nice-select's
+positioning code assumes.
 
-(The `.nice-select .list` rule in the same media query also uses
-`scale(1) translateY(0px)`, but it's on the list itself, not an ancestor, so it
-doesn't affect this bug.)
+Why this is the right fix:
+
+- **It matches the path that already works.**  Without a motion preference,
+  `.popup-content`'s computed transform is already `none` (see the
+  `popupTransform` values in the output above), and the dropdowns work.  The
+  fix gives reduced-motion users the same value everyone else already gets.
+- **It's tested.**  I injected the override into the page from the Puppeteer
+  script above.  With `transform: none`, the reduced-motion run matches the
+  no-preference run exactly (`listLeft: 1136, listTop: 450, listOnScreen: true`).
+- **It keeps the rule's purpose.**  The rule exists to switch off animation for
+  users who asked for less motion.  The `transition: none` next to it still does
+  that, and the fix leaves it alone.
+
+Notes for review:
+
+- **Stacking.**  A non-`none` transform also creates a stacking context, so
+  removing it could in principle change `z-index` layering.  It doesn't here:
+  the enclosing `.popup` is `position: absolute` with `z-index: 500`
+  (`css/pad/popup.css`), so it already creates a stacking context around
+  `.popup-content`.  And without a motion preference, `.popup-content` already
+  has no transform.
+- **A sturdier alternative.**  This fix removes the trigger, not the underlying
+  fragility.  `nice-select.ts` still assumes no ancestor of a fixed-position
+  list has a `transform`, `filter`, `perspective`, `will-change: transform`,
+  etc.  A future style or plugin that adds one to a popup would break the
+  dropdowns the same way.  A more thorough fix would have nice-select allow for
+  such an ancestor when positioning the list (for example by subtracting the
+  containing block's offset).  That's a larger change; it may be worth a
+  follow-up.
+- **Animation.**  The popup's open/close zoom (`scale(0.7)` plus a `transition`)
+  is set on the outer `.popup` in `css/pad/popup.css`, not on `.popup-content`,
+  and this media query doesn't override it.  So reduced-motion users apparently
+  still see that zoom, both before and after this fix.  That's a separate issue;
+  this fix neither causes nor cures it.
+- The `.nice-select .list` rule in the same media query also uses
+  `scale(1) translateY(0px)`, but it's on the list itself, not an ancestor, so
+  it doesn't affect this bug.
 
 ### Environment
 

@@ -1003,3 +1003,1108 @@ Claude Code v2.1.282 · Opus 5.5
   untracked, so nothing was committed.
 
 ✻ Cooked for 5s · done 11:22 PM
+
+===== SESSION BOUNDARY resumed=2026-09-29 =====
+Claude Code v2.1.284 · Opus 5.5
+
+❯ I've loaded this plugin on an Etherpad server for testing.  It works, but in  
+  the browser, under the Settings (gear) menu for a given pad, I get two        
+  instances of the new "Copy format" menu, and in both instances only the       
+  default choice ("Plain text, TAB-indented") is actually available -- none of  
+  the other formats are listed.  This seems like bug.  Do you know what is      
+  going on?                                                                     
+
+● Login expired · Please run /login
+
+✻ Cogitated for 0s · done Monday 10:03 PM
+
+❯ /login 
+  ⎿  Login successful
+
+  Read 1 file, listed 1 directory, ran 2 shell commands (ctrl+o to expand)
+  ⎿  15 skills available
+
+● I'm reading Etherpad's pad template and its nice-select widget code to see
+  where the duplication comes from.
+
+  Searched for 1 pattern, ran 4 shell commands (ctrl+o to expand)
+
+● I couldn't reproduce this because there's no Etherpad server here, but I'm
+  fairly sure the bug isn't in the plugin's current code. Your server is most
+  likely running old or duplicate installed copies of the plugin.
+
+  What rules out the current code:
+  - Etherpad's pad.html has exactly one mySettings.dropdowns block, and index.js
+    adds only one <select> to it. So one installed copy of this plugin can only
+    produce one menu.
+  - That menu is built on the server from FORMATS in static/js/formats.js, which
+    lists 11 formats. If the server were running this code, the menu would have
+    all 11.
+  - The widget Etherpad uses to draw dropdowns (nice-select) doesn't create a
+    second menu when setUpSettingsMenu() refreshes it.
+
+  Likely cause: pnpm run plugins i --path /path/to/... doesn't link to your
+  working tree. It copies the plugin into <etherpad>/src/plugin_packages/<name>/
+  and symlinks node_modules/<name> to that copy. Your last commit renamed
+  ep_org_export to ep_polypaste. If you installed under the old name and again
+  under the new one, Etherpad loads two separate plugins. Each adds its own
+  "Copy format:" menu, and the labels match because both use the same text. If
+  either copy was made while FORMATS had only the tabs entry, that menu shows
+  only "Plain text, TAB-indented". Edits you make in this directory don't reach
+  the server until you reinstall.
+
+  To check and fix, on the Etherpad server:
+  ls -l src/plugin_packages/ node_modules/ | grep -E 'ep_(org_export|polypaste)'
+  grep -c "id: '" src/plugin_packages/*/static/js/formats.js   # 11 = current
+  Then:
+  pnpm run plugins rm ep_org_export
+  pnpm run plugins i --path /home/kfogel/src/ep_polypaste   # re-copies current 
+  code
+  Restart Etherpad and hard-reload the pad.
+
+  If you still see two menus after that, run
+  document.querySelectorAll('select[id$="-format"]') in the browser console and
+  tell me the IDs it returns. That will show which plugin each menu comes from.
+
+✻ Cogitated for 2m 47s · done Monday 10:06 PM
+
+※ recap: You're fixing the duplicate "Copy format" menus that show only one option; old or stale copies of the plugin are probably installed on the Etherpad server. Next, check `src/plugin_packages/` on the server, remove `ep_org_export`, and reinstall ep_polypaste. (disable recaps in /config)
+
+❯ That was it -- the old ep_org_export was still installed.  I've fixed it as   
+  you recommended.  Now there's only one menu.  But the other problem remains,  
+  and I can see that I have the right static/js/formats.js installed (I         
+  installed today).                                                             
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+● I haven't found the cause yet. Nothing I've read explains the missing options,
+  so I need you to run one check in the browser.
+
+  What I checked:
+  - The server side looks right. eejsBlockMySettingsDropdowns writes one
+    <option> for every entry in FORMATS, all 11.
+  - Etherpad's translation code isn't removing them. It only replaces an
+    option's text, or sets an attribute when the key ends in something like
+    .title or .value. None of your keys end that way.
+  - The dropdown widget isn't dropping them. Etherpad draws selects with
+    nice-select, which copies every <option> into its list. The
+    niceSelect('update') call in setUpSettingsMenu() just rebuilds that list
+    from the options.
+
+  The options are lost somewhere between the page arriving from the server and
+  the widget displaying them, and I can't tell where without seeing the live
+  page. Open a pad, open DevTools, and paste this into the console:
+
+  [document.querySelectorAll('#ep_polypaste-format option').length,
+   document.querySelectorAll('#ep_polypaste-format + .nice-select li').length,
+   getComputedStyle(document.querySelector('#ep_polypaste-format + .nice-select 
+  .list')).maxHeight]
+
+  Also, in the Network tab, reload the pad and search the pad's HTML response
+  for ep_polypaste-format. That shows how many options the server actually sent.
+
+  How to read the result:
+  - The first number is 1: the server is sending only one option, so it isn't
+    running the formats.js you think it is. Check node_modules/ep_polypaste,
+    which may still point at an old copy.
+  - The first two numbers are 11 but you see one choice: it's a display problem,
+    such as the list being cut off or given a tiny max-height. The third value
+    will help with that.
+  - Anything else: something is changing the <select> after the page loads.
+
+  Paste the output here and I'll take it from there.
+
+✻ Sautéed for 32s · done Monday 10:17 PM
+
+❯ If I just give you the URL to the pad, can you do the above steps yourself?   
+
+● Yes, mostly. Two things determine how far I can get:
+
+  1. The server-side check is easy. I can fetch the pad's URL with curl and
+     count the <option>s inside #ep_polypaste-format myself. That only works if
+     the server is reachable from this machine (a localhost URL is fine), and it
+     tells us whether the server is sending all 11 options.
+  2. The in-browser checks need a real browser. The dropdown list is built by
+     JavaScript after the page loads, so curl can't see it. For that I'd use the
+     Claude in Chrome extension to open the pad in a new tab in your Chrome and
+     run the console snippet there. That requires the extension to be installed
+     and allowed on your Etherpad's site. If it isn't set up, I'll stop after
+     step 1 and you can paste the snippet's output.
+
+  Send me the URL and I'll start with step 1.
+
+✻ Baked for 5s · done Monday 10:19 PM
+
+❯ https://pad-sandbox.opentechstrategies.com/p/test-polypaste                   
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The server is sending all 11 options, so the server side is fine. Next I'll
+  open the pad in Chrome to see what happens to them in the browser.
+
+● Skill(anthropic-skills:chrome-browser)
+  ⎿  Successfully loaded skill
+
+● Claude in Chrome isn't connected in this session. Before falling back to you,
+  I'll check whether this machine has a headless browser I can use instead.
+
+  Listed 1 directory (ctrl+o to expand)
+
+● No browser is installed here, only Node. Meanwhile I can use curl to check the
+  client JavaScript the server actually serves to the browser.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Both client JS files match your local copies, and I noticed ep_print is
+  another plugin present both on the server and in your source tree. I'll check
+  if it or the others touch the settings menu.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● I got partway through the checks. Everything I can reach from here looks
+  correct, and the rest needs a real browser, which I don't have.
+
+  What I found:
+  - The server is sending all 11 options. I fetched the pad and the served page
+    has <select id="ep_polypaste-format"> with all 11 <option>s, correctly
+    labelled.
+  - The browser code is current. The server's copies of static/js/index.js and
+    static/js/formats.js are byte-for-byte identical to the ones in your working
+    tree.
+  - The other plugins don't look like the cause. The pad also loads ep_dark,
+    ep_hash_auth, ep_print, ep_hyperlinked_text and ep_set_title_on_pad.
+    ep_print, which you have locally, doesn't touch selects or dropdowns. I
+    didn't inspect the others.
+
+  So the options are lost after the page loads, either while Etherpad's dropdown
+  widget builds the menu or while it's displayed. I can't see that stage with
+  curl.
+
+  Why I stopped: the Claude in Chrome extension isn't connected in this session,
+  and this machine has Node but no browser. I can continue any of these ways:
+
+  1. Connect Claude in Chrome. I'd open the pad in a new tab, run the checks,
+     and look at the menu myself.
+  2. Let me download a headless Chromium (about 170 MB, via Puppeteer, into my
+     scratch directory rather than your repo). Its window size won't match
+     yours, so if the list is being cut off by the screen height it might not
+     reproduce.
+  3. Run the snippet from my earlier message yourself and paste the three
+     values.
+
+  Which do you want?
+
+✻ Sautéed for 52s · done Monday 10:20 PM
+
+❯ 2                                                                             
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● npm blocked Puppeteer's install script, so Chromium wasn't downloaded. I'll
+  run Puppeteer's browser download directly.
+
+  Made 1 scratchpad edit +51, ran 3 shell commands (ctrl+o to expand)
+
+● Chromium fails to start here since unprivileged user namespaces are disabled,
+  so I'll relaunch it with --no-sandbox—acceptable since it's only loading your
+  local pad server, but I'll flag this in the summary.
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+● The issue wasn't reproducible at 1400×900, though the menu list does extend
+  past the window's right edge, cutting off the second format's label. I'll test
+  other common window sizes since the list's position depends on window size.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I've tried six window sizes and the menu works at all of them. Summary below.
+
+  Read 1 file (ctrl+o to expand)
+
+● I couldn't reproduce the problem. In a fresh headless Chrome, your pad's "Copy
+  format" menu opens and shows all 11 formats at every window size I tried:
+  1920×1080, 1400×900, 1366×768, 1280×720, 1280×600, 1024×640 and 700×900.
+
+  What the checks showed:
+  - The browser gets all 11 options. After the page finishes loading there is
+    exactly one #ep_polypaste-format <select>, it has all 11 options, and the
+    dropdown widget copies all 11 into its list.
+  - The list opens fully. Clicking the menu opens a list of all the formats,
+    scrollable when the window is short. On shorter windows it opens upward
+    above the menu and shows about seven formats before you need to scroll.
+  - There are no JavaScript errors. The console shows only Etherpad's usual
+    missing-translation warnings for the timeslider.
+
+  So the plugin works in a clean browser, and whatever you're seeing is probably
+  specific to your browser.
+
+  Things to try:
+  1. Hard-reload the pad (Ctrl+Shift+R). Your tab may still have page code
+     cached from before you removed ep_org_export.
+  2. Open the pad in a private window. That rules out saved site data and, in
+     most browsers, extensions.
+  3. Scroll inside the open list. On a short window it shows only part of the
+     list and needs scrolling. That wouldn't explain seeing only one choice, but
+     it rules something out.
+
+  If it's still broken, tell me which browser you're using and send a screenshot
+  with the menu open, since I'm not sure exactly what you're seeing.
+
+  Two small real problems I did find:
+  - The list runs off the right edge of the window. It's wider than the menu
+    button and lines up with the button's left edge, so "Plain text,
+    TAB-indented, with bullets/numbers" gets cut off. I can fix that with a
+    little CSS in the plugin if you want.
+  - The Language menu was blank in headless Chrome. It reports its language as
+    en-us, which that menu doesn't list. I didn't look into it; it's probably an
+    Etherpad quirk rather than something in your plugin.
+
+  Housekeeping:
+  - Each headless page load joined your pad as an anonymous user, which is why
+    the user count showed 2. Nothing was typed into the pad.
+  - I ran Chromium with --no-sandbox because its sandbox can't start on this
+    machine. It only ever loaded your pad server.
+  - Puppeteer, Chromium and the screenshots are in my session scratch directory.
+    Nothing was added to your repo.
+
+✻ Brewed for 2m 26s · done Monday 10:23 PM
+
+※ recap: You're debugging the ep_polypaste "Copy format" menu showing only one choice; the duplicate menu is fixed, and in headless Chrome the menu shows all 11 formats. Next, hard-reload the pad or open it in a private window, and send me your browser name and a screenshot if it's still broken. (disable recaps in /config)
+
+❯ Well, one thing I've discovered is that in two different browsers -- Chormium 
+  version 154.0.8037.57 (Official Build) built on Debian GNU/Linux forky/sid    
+  (x86_64), and Firefox 140.16.0esr (64-bit) also on the same Debian box --     
+  none of the menu items under Settings work.  They all show exactly one item.  
+  When you click on them, the little expand/contract open triangle rotates to   
+  show the toggled state, but the one displayed item doesn't change, and no     
+  menu listing other items appears down below it.                               
+
+● That changes things: if Font type and Language fail the same way, the cause
+  isn't in ep_polypaste. The pattern you describe means the menu is opening but
+  its list isn't being displayed; the arrow flips when a menu opens. Your
+  browsers differ from my headless run in a few obvious ways. The first I'll
+  test is dark mode, since ep_dark switches the theme when the system prefers
+  dark.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Dark mode and browser version aren't the issue—the earlier failures were due
+  to my test script closing the popup too early. I suspect a CSS transform on
+  the popup is throwing off its fixed positioning, so I'll check its CSS for
+  that.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Found it: popup.css applies transform: scale(1) under reduced-motion, which
+  turns the panel into the containing block for its fixed-position dropdown,
+  causing it to be mispositioned and clipped. Testing this now.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Confirmed: with "reduce motion" enabled, all three Settings menus render over
+  2,000 pixels off-screen in a 1,400-pixel window, leaving only the flipped
+  arrow visible. I'll check if your desktop's animation setting is disabled,
+  since that's typically what triggers browsers to report reduced motion.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I found the cause, and it's a bug in Etherpad, not in your plugin. It shows up
+  whenever your browser reports that you prefer reduced motion, which is
+  probably true for both of your browsers.
+
+  What's going on: Etherpad's colibris skin has this rule in popup.css:
+
+  @media (prefers-reduced-motion) {
+    .popup>.popup-content {
+      transform: scale(1);
+      transition: none;
+    }
+    ...
+  }
+
+  scale(1) looks harmless, but in CSS any transform other than none makes the
+  Settings panel the reference box for fixed-position children, in place of the
+  window. The dropdown lists are fixed-position, and Etherpad's nice-select code
+  sets their position in window coordinates. So when this rule applies, each
+  list is placed that far again from the panel's corner and ends up off-screen.
+  Opening a menu flips the arrow, but no list appears.
+
+  My test, run against your pad in headless Chromium 154 at 1400×900:
+
+  ┌──────────────────┬─────────────────────┬────────────────────────────────┐
+  │  Reduce-motion   │   Panel transform   │  Font type / Language / Copy   │
+  │     setting      │                     │          format lists          │
+  ├──────────────────┼─────────────────────┼────────────────────────────────┤
+  │ no preference    │ none                │ open normally, options visible │
+  ├──────────────────┼─────────────────────┼────────────────────────────────┤
+  │ reduce           │ matrix(1,0,0,1,0,0) │ open about 2,120 px from the   │
+  │                  │                     │ left, so nothing visible       │
+  └──────────────────┴─────────────────────┴────────────────────────────────┘
+
+  I couldn't check your desktop setting because gsettings isn't installed where
+  I'm running. You can confirm in the browser console:
+  matchMedia('(prefers-reduced-motion: reduce)').matches should return true in
+  both Chromium and Firefox. It would come from something like GNOME's "Reduce
+  animation" or a disabled-animations setting on your desktop.
+
+  Fixes:
+  1. The real fix is in Etherpad: use transform: none in that reduced-motion
+     rule. It's src/static/skins/colibris/src/components/popup.css in
+     etherpad-lite, and I'd report it upstream.
+  2. You can fix it now on your server by making that one-word change in your
+     Etherpad checkout and restarting. It would be overwritten when you upgrade
+     Etherpad.
+  3. To see the menus meanwhile, turn off the reduced-motion setting on your
+     desktop.
+
+  I'd do 1 plus 2. I can draft the upstream bug report with the reproduction
+  steps if you want.
+
+  I'd leave ep_polypaste alone; working around a core skin bug inside it would
+  be the wrong place. The only plugin issue I found is the smaller one from
+  before: the Copy format list is wider than its button and gets cut off at the
+  right edge of the window.
+
+✻ Churned for 1m 32s · done Monday 11:14 PM
+
+※ recap: You're getting ep_polypaste's Copy format menu working, and the empty Settings menus turned out to be an Etherpad bug triggered by your reduced-motion setting. Next, run matchMedia('(prefers-reduced-motion: reduce)').matches in your browser console to confirm it returns true. (disable recaps in /config)
+
+❯ Please draft the upstream bug report, with reproduction steps.  Don't file it 
+  upstream, though.  I will review the text, test the recipe, etc, and file it  
+  myself later.                                                                 
+
+  Made 1 scratchpad edit +31, ran 2 shell commands (ctrl+o to expand)
+
+● The reproduction script works. Before putting the proposed one-line fix in the
+  report, I'll confirm it actually fixes the menus.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Confirmed: with transform: none, the reduced-motion case behaves exactly like
+  the normal one. Now I'll write the draft.
+
+  Made 1 scratchpad edit +138 (ctrl+o to expand)
+
+● The draft bug report is written, and nothing has been filed. It's at:
+
+  /tmp/claude-1000/-home-kfogel-src-ep-polypaste/6512dfd5-7c23-4703-8aae-c37a6ed
+  8bce6/scratchpad/etherpad-reduced-motion-issue.md
+
+  That's my scratch directory for this session, so it may not last. Tell me
+  where you'd like it copied, for example ~/src/.
+
+  It includes a title, step-by-step manual reproduction, a Puppeteer script that
+  shows the bug, the cause, a one-line fix, and your environment details. It's
+  formatted for pasting into a GitHub issue on ether/etherpad-lite.
+
+  What I tested:
+  - The Puppeteer script: I ran it against your sandbox pad. The Font type list
+    is on screen with no motion preference, and at left: 2123 in a
+    1,400-pixel-wide window with reduced motion.
+  - The proposed fix: I injected transform: none into the page, and with reduced
+    motion on the list then appears in exactly the same place as with no
+    preference.
+
+  What you should check before filing:
+  - The manual recipes are untested. The Chromium DevTools "Rendering" panel
+    steps and the Firefox about:config setting ui.prefersReducedMotion = 1 are
+    standard, but I only drove the reproduction through Puppeteer.
+  - Fill in the Etherpad version. There's a TODO in the Environment section for
+    your server's version; the current develop branch is 3.3.6.
+  - The script has no --no-sandbox flag. I had to add it on this machine, but
+    upstream maintainers won't need it.
+  - The "#7696" reference comes from a comment in Etherpad's nice-select.ts. You
+    may want to link that PR, or drop the reference.
+
+✻ Churned for 1m 28s · done Monday 11:21 PM
+
+❯ Copy it to the current ep_polypaste source code directory.  I'll figure out   
+  what to do with it from there.                                                
+
+● Bash(cp -n /tmp/claude-1000/-home-kfogel-src-ep-polypaste/6512dfd5-7c23-4703-8
+      aae-c37a6ed8bce6/scratchpad/etherpad-reduced-motion-issue.md
+      /home/kfogel/src/ep_polypa…)
+  ⎿  ?? etherpad-reduced-motion-issue.md
+     ?? logv.out
+  ⎿  Created etherpad-reduced-motion-issue.md (+137 -0)
+        1 +**Title:** Settings dropdowns (Font type, Language, …) never s
+          +how their options when the browser prefers reduced motion     
+        2 +                                                              
+        3 +### Describe the bug                                          
+        4 +                                                              
+        5 +With `prefers-reduced-motion: reduce` in effect, no dropdown i
+          +n the Settings                                                
+        6 +popup (colibris skin) can be used.  Clicking one flips its arr
+          +ow to the                                                     
+        7 +"open" state, but the list of options never appears, so the va
+          +lue can't be                                                  
+        8 +changed.  This affects the core "Font type" and "Language" men
+          +us and any                                                    
+        9 +dropdown a plugin adds to the `mySettings.dropdowns` block.   
+       10 +                                                              
+       11 +Many Linux desktops report reduced motion to the browser when 
+          +desktop                                                       
+       12 +animations are turned off, so users can hit this without ever 
+          +having                                                        
+       13 +knowingly asked for reduced motion.                           
+       14 +                                                              
+       15 +### To Reproduce                                              
+       16 +                                                              
+       17 +1. Make the browser report reduced motion, using either of the
+          +se:                                                           
+       18 +   - **Chromium/Chrome:** DevTools → ⋮ → More tools → Renderin
+          +g →                                                           
+       19 +     "Emulate CSS media feature prefers-reduced-motion" → `red
+          +uce`                                                          
+       20 +     (keep DevTools open for the following steps).            
+       21 +   - **Firefox:** `about:config` → set `ui.prefersReducedMotio
+          +n` to `1`                                                     
+       22 +     (Number).                                                
+       23 +   - Or turn off animations / turn on "reduce motion" in the O
+          +S settings.                                                   
+       24 +2. Open any pad with the default colibris skin.               
+       25 +3. Click the gear icon to open Settings.                      
+       26 +4. Click the "Font type" dropdown.                            
+       27 +                                                              
+       28 +**Expected:** The list of fonts appears below the dropdown.   
+       29 +                                                              
+       30 +**Actual:** The dropdown's arrow flips to the open state, but 
+          +no list appears.                                              
+       31 +The list does get the `open` class; it's just positioned off-s
+          +creen (see below).                                            
+       32 +                                                              
+       33 +Repeat step 1 with "no preference" (or `ui.prefersReducedMotio
+          +n` = `0`) and                                                 
+       34 +the list appears as expected.                                 
+       35 +                                                              
+       36 +Automated reproduction with Puppeteer (`npm install puppeteer`
+          +, then                                                        
+       37 +`node repro.mjs https://<your-etherpad>/p/<any-pad>`):        
+       38 +                                                              
+       39 +```js                                                         
+       40 +import puppeteer from 'puppeteer';                            
+     … 97 more lines (ctrl+o to expand)
+
+● I copied the draft to
+  /home/kfogel/src/ep_polypaste/etherpad-reduced-motion-issue.md. It's
+  untracked, so nothing was committed.
+
+✻ Cooked for 5s · done Monday 11:22 PM
+
+❯ /export                                                                       
+  ⎿  Conversation exported to: /home/kfogel/src/ep_polypaste/2026-09-28-232326-i
+     ve-loaded-this-plugin-on-an-etherpad-server-for.txt
+
+※ recap: You were fixing the broken Settings dropdowns, which turned out to be an Etherpad bug, and I've drafted an upstream bug report in the repo as `etherpad-reduced-motion-issue.md`. Next, review it, test the reproduction steps and file it yourself.
+
+❯ In an Etherpad installation, what is the difference between                   
+  'src/plugin_packages/PLUGIN_NAME' and 'src/node_modules/PLUGIN_NAME'?  Which  
+  one does Etherpad actually load at startup time?  If I want to uninstall a    
+  plugin, which one should I remove?  Or both?                                  
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Startup also reads var/installed_plugins.json and reinstalls everything listed
+  there, which matters for uninstalling. I'll check how plugins are found at
+  startup and how Etherpad's uninstall works.
+
+  Ran 2 shell commands (ctrl+o to expand)
+● src/plugin_packages/PLUGIN_NAME holds the plugin's actual files, and
+  src/node_modules/PLUGIN_NAME is normally just a symlink to that directory. So
+  both paths lead to the same files, and those are what Etherpad loads. To
+  uninstall, use Etherpad's own command, which removes both and also updates a
+  list you'd otherwise miss. This is from reading Etherpad's current develop
+  source, mainly src/static/js/pluginfw/installer.ts and LinkInstaller.ts. If
+  your server runs an older release, check that it behaves the same.
+
+  src/plugin_packages/PLUGIN_NAME
+  - This is the real installed copy. Etherpad's plugin installer (the
+    live-plugin-manager library) puts it there.
+  - With plugins i --path, it's a copy of your source directory as it was when
+    you installed.
+  - It's kept outside node_modules so that upgrading Etherpad doesn't wipe
+    installed plugins.
+
+  src/node_modules/PLUGIN_NAME
+  - This is normally a symlink to src/plugin_packages/PLUGIN_NAME.
+  - It exists so ordinary Node module loading works. The hook paths in ep.json
+    (like ep_polypaste/index:...) and the plugin's own require() calls resolve
+    through node_modules.
+
+  Which one is loaded: in effect, plugin_packages. The list of installed plugins
+  comes from the plugin installer, which reads plugin_packages. The code is
+  loaded through the node_modules symlink, so it's the same files.
+
+  What happens at startup:
+  - Missing symlinks get recreated. Etherpad scans src/plugin_packages/ and
+    creates a src/node_modules/ symlink for any plugin that lacks one.
+  - Listed plugins get reinstalled. Etherpad reads var/installed_plugins.json
+    and reinstalls every plugin listed there.
+
+  That's why there are really three things to clean up, not two.
+
+  To uninstall, use Etherpad's command rather than deleting directories:
+
+  pnpm run plugins rm PLUGIN_NAME
+
+  It removes the node_modules symlink, deletes the plugin_packages directory,
+  removes any dependencies no other plugin needs, and rewrites
+  var/installed_plugins.json.
+
+  If you delete things by hand, remove all three:
+  1. src/node_modules/PLUGIN_NAME (the symlink)
+  2. src/plugin_packages/PLUGIN_NAME
+  3. The plugin's entry in var/installed_plugins.json
+
+  If you remove only some of them:
+  - Only the symlink: it comes back at the next startup.
+  - Only plugin_packages: you leave a broken symlink.
+  - Either or both, but not the installed_plugins.json entry: Etherpad tries to
+    reinstall the plugin at startup. For a plugin installed from a local path
+    that isn't on npm, that probably just logs an error. For an npm-published
+    plugin, it would quietly come back.
+
+  This also explains the earlier ep_org_export duplicate. Installing under the
+  new name added a second entry rather than replacing the old one, so both
+  plugins were loaded until you removed the old one.
+
+✻ Cogitated for 36s · done 7:59 PM
+
+❯ What is the recommended way to uninstall a plugin?  I want to temporarily     
+  uninstall ep_polypaste, for development purposes.  I'll probably re-install   
+  it again soon afterwards.                                                     
+
+● Etherpad has no way to disable a plugin short of uninstalling it, so use its
+  CLI. From the Etherpad root directory on the server:
+
+  pnpm run plugins rm ep_polypaste        # uninstall
+  # ... later ...
+  pnpm run plugins i --path /path/to/ep_polypaste   # reinstall from your 
+  working tree
+
+  Restart Etherpad after each command, then hard-reload any open pads. The CLI
+  runs as its own process, so a server that's already running won't notice the
+  change.
+
+  What to expect:
+  - Settings are kept. The rm command leaves any "ep_polypaste": {...} block in
+    settings.json alone. Without the plugin nothing reads it, so it's harmless,
+    and it applies again when you reinstall.
+  - Users' chosen formats are kept. Each browser stores its Copy format choice
+    in localStorage under ep_polypaste.format, so it comes back after the
+    reinstall.
+  - The reinstall gives you a fresh copy. Because rm deletes the old copy in
+    src/plugin_packages/, the reinstall copies your current working tree. That's
+    also the safest way to pick up code changes. I haven't checked whether
+    running i --path over an existing install without a version bump replaces
+    the files, so rm then i is the reliable routine.
+
+  The admin page at /admin/plugins can also uninstall plugins without a restart.
+  But plugins installed from a local path can only be reinstalled with the CLI,
+  so for this round trip the CLI is simpler.
+
+✻ Crunched for 11s · done 8:00 PM
+
+❯ When you say the "Etherpad root directory", do you mean the topmost directory 
+  that looks like an Etherpad source tree, or do you mean the parent of that    
+  directory?                                                                    
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I mean the topmost directory of the Etherpad source tree, not its parent.
+  That's the checkout itself, usually named etherpad-lite. It's where
+  settings.json lives, alongside the src/, bin/ and var/ subdirectories.
+
+  That directory's package.json defines the plugins script as pnpm --filter bin 
+  run plugins, and pnpm run plugins only finds it there. In the parent directory
+  it won't find the script, and inside src/ it finds a different package.json
+  that doesn't have it.
+
+  Because of that --filter bin, the command actually runs from inside bin/, not
+  from where you typed it. So pass an absolute path to --path, as in my example.
+  A relative path like ../ep_polypaste would probably be looked up from bin/
+  and not find your plugin. I haven't tested that, but an absolute path avoids
+  the question.
+
+✻ Cogitated for 10s · done 8:01 PM
+
+※ recap: We're getting ep_polypaste's Settings menu working and cleaning up its install; the empty menus turned out to be an Etherpad bug, drafted as an upstream report. Next, run `pnpm run plugins rm ep_polypaste` from the Etherpad checkout and restart. (disable recaps in /config)
+
+❯ How can I list all the extra plugins installed on an Etherpad server?         
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Run this from the top of the Etherpad tree:
+
+  pnpm run plugins ls
+
+  It prints something like Installed plugins are: ep_etherpad-lite, 
+  ep_polypaste, ep_print, .... The first entry, ep_etherpad-lite, is Etherpad
+  itself; everything else is an extra plugin.
+
+  That command only reads var/installed_plugins.json and doesn't check what's
+  actually installed. To see what really loads, use one of these:
+
+  - Look on disk:
+  ls src/plugin_packages/            # installed copies (ignore .versions)
+  ls -l src/node_modules/ | grep ep_   # the symlinks Etherpad loads through
+    If installed_plugins.json and src/plugin_packages/ disagree, like the
+    leftover ep_org_export earlier, that's worth cleaning up.
+  - Use the admin page: /admin/plugins lists the plugins the running server
+    loaded, with version numbers. You need admin access.
+  - Check from outside the server:
+    https://<server>/pluginfw/plugin-definitions.json lists the plugins the
+    running server has loaded. I believe it doesn't need a login, but I haven't
+    checked.
+
+✻ Crunched for 11s · done 8:08 PM
+
+※ recap: You're debugging ep_polypaste on your Etherpad sandbox, and the broken Settings menus turned out to be an Etherpad reduced-motion bug. Next, review and test the draft upstream report in etherpad-reduced-motion-issue.md, then file it yourself. (disable recaps in /config)
+
+❯ How would you explain your suggested fix?  Why is it correct?  What does it   
+  do?                                                                           
+
+● The fix changes one value in Etherpad's reduced-motion CSS rule for the
+  Settings panel, from transform: scale(1) to transform: none. It works because
+  the two look identical but are not equivalent in CSS.
+
+  What the old value does. scale(1) means "scale to 100%", so on its own it
+  changes nothing visually. But in CSS, any element whose transform is anything
+  other than none takes on some layout roles, even an identity transform like
+  scale(1). The relevant one here: it becomes the reference box for all its
+  position: fixed descendants. Normally a fixed element is positioned relative
+  to the browser window. Inside a transformed ancestor, it's positioned relative
+  to that ancestor instead. This is standard, specified behaviour; filter,
+  perspective and will-change: transform have the same effect.
+
+  Why that breaks the menus. The dropdown lists are position: fixed so they can
+  float outside the popup's scroll area. When a list opens, Etherpad's
+  nice-select code measures where the menu button is on screen, relative to the
+  window, and writes those numbers into the list's left and top. The browser
+  then measures them from the panel's top-left corner instead of the window's.
+  The panel's own distance from the window's corner gets counted twice, and the
+  list lands that far down and to the right. On your pad that pushed it to about
+  x=2123 in a 1,400-pixel-wide window, off-screen and clipped by the panel.
+
+  What the new value does. transform: none means no transform at all, so the
+  panel is no longer the reference box. The window is again, which is what
+  nice-select's arithmetic assumes. It looks exactly the same as scale(1),
+  because scale(1) never changed the appearance anyway.
+
+  Why I'm confident it's right:
+  - It matches the normal case. With no motion preference, the panel's transform
+    is already none; my headless test showed it. That's the configuration
+    everyone without reduced motion uses, where the menus work. The fix just
+    gives reduced-motion users the same value everyone else already has.
+  - I tested it. With the override injected and reduced motion emulated, the
+    Font type list opened at exactly the same place as the no-preference run
+    (left: 1136, top: 450).
+  - It keeps what the rule is for. The rule exists to switch off animation for
+    people who asked for less motion. The transition: none beside it still does
+    that, and the fix leaves it alone.
+
+  Caveats a reviewer might raise:
+  - Layering. A non-none transform also puts the element in its own drawing
+    layer (a "stacking context"), which affects how z-index layering works.
+    Removing it could in principle change what draws on top of what. In
+    practice, the popup around the panel almost certainly creates its own layer
+    already, and the panel already runs without one for users without reduced
+    motion. I haven't checked the popup's CSS to confirm, though.
+  - A sturdier alternative. The fix removes the trigger, not the fragility.
+    nice-select still assumes nothing between the list and the window has a
+    transform. A future style or plugin that puts a transform or filter on the
+    popup would break the menus again. A more thorough fix would make
+    nice-select account for such an ancestor when positioning the list. That's a
+    bigger change and harder to review, so I'd propose the one-liner and
+    perhaps mention this as a follow-up in the issue.
+  - Animation. The popup's opening zoom (scale(0.7) with a transition) is set on
+    the outer .popup element, which this rule doesn't touch. As far as I can
+    tell, reduced-motion users still see that zoom both before and after the
+    fix. It's a separate issue, and the fix neither causes nor cures it.
+
+✻ Baked for 22s · done 8:41 PM
+
+❯ Add that explanation to the draft bug report.                                 
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+● This confirms .popup uses position: absolute with z-index: 500, creating its
+  own stacking context. Since the draft isn't in the plugin directory anymore,
+  I'll search for where it moved to.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● You renamed it to etherpad-reduced-motion-bug-draft-report.md and committed
+  it. I'll read your version, since you may have edited it.
+
+  Read 1 file (ctrl+o to expand)
+
+● I'll add the explanation to the "Suggested fix" section since "Cause" already
+  covers the positioning issue—covering why the fix works, plus caveats, with
+  the layering point marked as checked.
+
+● Update(etherpad-reduced-motion-bug-draft-report.md)
+  ⎿  Added 41 lines, removed 6 lines
+      119     }
+      120  ```
+      121  
+      122 -I tested this by injecting the override into the page from the
+          - Puppeteer script                                             
+      123 -above.  With `transform: none`, the reduced-motion run matches
+          - the                                                          
+      124 -no-preference run exactly (`listLeft: 1136, listTop: 450, list
+          -OnScreen: true`).                                             
+      122 +`none` and `scale(1)` render identically, but `none` doesn't m
+          +ake                                                           
+      123 +`.popup-content` the containing block for fixed-position desce
+          +ndants.  The                                                  
+      124 +viewport becomes their containing block again, which is what n
+          +ice-select's                                                  
+      125 +positioning code assumes.                                     
+      126  
+      126 -(The `.nice-select .list` rule in the same media query also us
+          -es                                                            
+      127 -`scale(1) translateY(0px)`, but it's on the list itself, not a
+          -n ancestor, so it                                             
+      128 -doesn't affect this bug.)                                     
+      127 +Why this is the right fix:                                    
+      128  
+      129 +- **It matches the path that already works.**  Without a motio
+          +n preference,                                                 
+      130 +  `.popup-content`'s computed transform is already `none` (see
+          + the                                                          
+      131 +  `popupTransform` values in the output above), and the dropdo
+          +wns work.  The                                                
+      132 +  fix gives reduced-motion users the same value everyone else 
+          +already gets.                                                 
+      133 +- **It's tested.**  I injected the override into the page from
+          + the Puppeteer                                                
+      134 +  script above.  With `transform: none`, the reduced-motion ru
+          +n matches the                                                 
+      135 +  no-preference run exactly (`listLeft: 1136, listTop: 450, li
+          +stOnScreen: true`).                                           
+      136 +- **It keeps the rule's purpose.**  The rule exists to switch 
+          +off animation for                                             
+      137 +  users who asked for less motion.  The `transition: none` nex
+          +t to it still does                                            
+      138 +  that, and the fix leaves it alone.                          
+      139 +                                                              
+      140 +Notes for review:                                             
+      141 +                                                              
+      142 +- **Stacking.**  A non-`none` transform also creates a stackin
+          +g context, so                                                 
+      143 +  removing it could in principle change `z-index` layering.  I
+          +t doesn't here:                                               
+      144 +  the enclosing `.popup` is `position: absolute` with `z-index
+          +: 500`                                                        
+      145 +  (`css/pad/popup.css`), so it already creates a stacking cont
+          +ext around                                                    
+      146 +  `.popup-content`.  And without a motion preference, `.popup-
+          +content` already                                              
+      147 +  has no transform.                                           
+      148 +- **A sturdier alternative.**  This fix removes the trigger, n
+          +ot the underlying                                             
+      149 +  fragility.  `nice-select.ts` still assumes no ancestor of a 
+          +fixed-position                                                
+      150 +  list has a `transform`, `filter`, `perspective`, `will-chang
+          +e: transform`,                                                
+      151 +  etc.  A future style or plugin that adds one to a popup woul
+          +d break the                                                   
+      152 +  dropdowns the same way.  A more thorough fix would have nice
+          +-select allow for                                             
+      153 +  such an ancestor when positioning the list (for example by s
+          +ubtracting the                                                
+      154 +  containing block's offset).  That's a larger change; it may 
+          +be worth a                                                    
+      155 +  follow-up.                                                  
+      156 +- **Animation.**  The popup's open/close zoom (`scale(0.7)` pl
+          +us a `transition`)                                            
+      157 +  is set on the outer `.popup` in `css/pad/popup.css`, not on 
+          +`.popup-content`,                                             
+      158 +  and this media query doesn't override it.  So reduced-motion
+          + users apparently                                             
+      159 +  still see that zoom, both before and after this fix.  That's
+          + a separate issue;                                            
+      160 +  this fix neither causes nor cures it.                       
+      161 +- The `.nice-select .list` rule in the same media query also u
+          +ses                                                           
+      162 +  `scale(1) translateY(0px)`, but it's on the list itself, not
+          + an ancestor, so                                              
+      163 +  it doesn't affect this bug.                                 
+      164 +                                                              
+      165  ### Environment
+      166  
+      167  - Etherpad version: <!-- TODO: fill in from the admin page / p
+           ackage.json -->
+
+● I added the explanation to etherpad-reduced-motion-bug-draft-report.md under
+  "Suggested fix". It's not committed; your earlier commit has the version
+  before this change.
+
+  The existing "Cause" section already explains how scale(1) changes what
+  fixed-position lists are measured from, so I didn't repeat that. The new
+  material has two parts:
+
+  - Why this is the right fix: it gives reduced-motion users the same value
+    everyone else already has, it passed my Puppeteer test, and transition: none
+    still switches off the animation.
+  - Notes for review:
+    - Layering: I checked this since my last message, so it's stated as fact
+      rather than as a guess. .popup is position: absolute with z-index: 500, so
+      removing the panel's transform can't change how it layers against the
+      rest of the page.
+    - A sturdier alternative: making nice-select account for a transformed
+      ancestor, suggested as a possible follow-up.
+    - The popup's zoom animation: apparently still plays for reduced-motion
+      users. That's a separate issue, marked as such.
+    - The .nice-select .list rule: moved here from its own paragraph, unchanged.
+
+  The Etherpad version is still a TODO in the Environment section.
+
+✻ Cogitated for 31s · done 8:57 PM
+
+❯ How long does the etherpad back-end test suite take to run on a typical cloud 
+  VPS?                                                                          
+
+● GitHub's standard Actions runners (2–4 vCPUs, 7–16 GB RAM) are roughly a
+  typical small cloud VPS. So Etherpad's own CI timings for its back-end tests
+  are a good benchmark, and I'll look them up rather than guess.
+
+  Ran 5 shell commands (ctrl+o to expand)
+
+● Whole runs take about 3–3.5 minutes, but that includes setup and several
+  parallel jobs. I'll get the per-step times for the Linux test jobs.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Probably about 1–2 minutes on a typical small VPS, not counting setup. That's
+  an estimate: I couldn't time it on a VPS, so it's scaled from Etherpad's own
+  CI timings.
+
+  What Etherpad's CI shows. I pulled step timings for the two most recent
+  successful "Backend tests" runs on develop (September 24 and 28, 2026). They
+  run on GitHub's ubuntu-latest machines, which for public repositories have 4
+  vCPUs and 16 GB of RAM.
+
+  ┌────────────────────────────────┬───────────────────┬───────────────────┐
+  │              Step              │  Without plugins  │   With plugins    │
+  ├────────────────────────────────┼───────────────────┼───────────────────┤
+  │ pnpm test (main back-end       │ 40 s              │ 46–47 s           │
+  │ suite)                         │                   │                   │
+  ├────────────────────────────────┼───────────────────┼───────────────────┤
+  │ pnpm run test:vitest (newer    │ 4–6 s             │ 5–6 s             │
+  │ tests)                         │                   │                   │
+  ├────────────────────────────────┼───────────────────┼───────────────────┤
+  │ Whole job, including checkout  │ 1 min 16 s – 1    │ 1 min 32 s – 1    │
+  │ and setup                      │ min 32 s          │ min 44 s          │
+  └────────────────────────────────┴───────────────────┴───────────────────┘
+
+  The dependency install in CI takes only about 5 seconds because the pnpm
+  package store is cached. A first pnpm i on a fresh VPS downloads everything
+  and could take a few minutes.
+
+  For a typical VPS:
+  - With 4 vCPUs, expect about the same: roughly 45–55 seconds of tests.
+  - With 1–2 vCPUs, which is common for cheap plans, expect slower, perhaps 1–2
+    minutes. I'm assuming that because the suite runs a real Etherpad server and
+    much of its time goes to the CPU, but I haven't measured it.
+  - Adding plugins, as in CI's "with plugins" job, adds about 10–15%.
+
+  The easiest way to get a real number for your machine is to run time pnpm test
+  from the Etherpad tree once dependencies are installed. Before running it on
+  your sandbox server, check whether the tests would touch its live
+  configuration or database.
+
+✻ Crunched for 39s · done 9:01 PM
+
+※ recap: You're debugging ep_polypaste's broken Settings dropdowns, which turned out to be an Etherpad reduced-motion CSS bug, and the draft upstream report now includes the fix explanation. Next, review the uncommitted draft, fill in the Etherpad version, and file it. (disable recaps in /config)
+
+❯ Is there some reason why running the Etherpad test suite (front-end and       
+  back-end) on an Etherpad instance would wipe out the instance's pads?         
+
+● I'll check Etherpad's test setup code rather than answer from memory.
+
+  Ran 1 shell command (ctrl+o to expand)
+● The back-end tests use whatever database is set in settings.json, with test
+  setup only overriding port, IP, and rate limits. Next I'll check if any tests
+  perform bulk pad deletions.
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+● Found it: one back-end test deletes every pad in the database. I'll confirm
+  which database the tests use and check the front-end and admin tests too.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Yes. Etherpad's back-end tests run against the database configured in the
+  instance's own settings.json. One of them deletes every pad in that database.
+  I read this in the current develop source; I haven't run it, but the code is
+  unambiguous.
+
+  The test that deletes everything: src/tests/backend/specs/lowerCasePadIds.ts
+  has this cleanup helper:
+
+  const cleanUpPads = async () => {
+    const {padIDs} = await padManager.listAllPads();
+    await Promise.all(padIDs.map(async (padId: string) => {
+      if (await padManager.doesPadExist(padId)) {
+        const pad = await padManager.getPad(padId);
+        await pad.remove();
+      }
+    }));
+  };
+
+  It runs before and after every test in that file. It lists all pads in the
+  database, not just ones the test created, and removes each one with its
+  revisions and chat.
+
+  Why that reaches your real pads:
+  - pnpm test loads the instance's settings. It runs mocha inside the Etherpad
+    tree, and the test setup starts an Etherpad server in-process using the
+    normal settings loader. That reads the top-level settings.json (or whatever
+    --settings names), including dbType and dbSettings.
+  - The test setup doesn't swap the database. src/tests/backend/common.ts only
+    changes the port, bind address and rate limits. So the tests get the same
+    database as the live instance, whether that's var/dirty.db, MySQL, Postgres
+    or anything else.
+  - CI doesn't notice. It runs on a throwaway checkout with a fresh dirty.db, so
+    there's nothing to lose.
+
+  Other back-end tests create and delete pads with their own, usually random,
+  names. They'll leave scratch pads and authors behind if a run is interrupted,
+  but I found no other bulk deletion.
+
+  The front-end tests (Playwright, pnpm run test-ui) drive a server at
+  localhost:9001 through a browser. From a quick grep, they create their own
+  random-named pads and delete only those. I didn't find any bulk deletion in
+  them or in the admin UI tests, but I didn't audit every test file. The risk to
+  existing pads comes from the back-end suite.
+
+  To run the tests safely:
+  - Use a separate Etherpad checkout with its own settings.json and a throwaway
+    database. This is the simplest option.
+  - Or point the tests at a scratch settings file. Something like pnpm test -- 
+    --settings /path/to/test-settings.json, with a dbSettings.filename of its
+    own. Etherpad's settings loader accepts a --settings option, but I haven't
+    verified that it's passed through when running under mocha. Check the log
+    line settings loaded from: ... before trusting it.
+  - Back up the database first in any case: copy var/dirty.db, or dump MySQL or
+    Postgres.
+
+  If your sandbox lost its pads after a test run, this test is almost certainly
+  the cause. With the default dirty database, a backup copy of var/dirty.db from
+  before the run would bring them back.
+
+✻ Brewed for 53s · done 10:28 PM
+
+❯ Can you tell me how to restore from var/dirty.db, step by step?               
+
+● Before writing steps, I'll check how the dirty database stores data, because
+  that affects whether recovery is possible even without a backup.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The dirty library logs deletions as extra lines rather than removing data, so
+  your dirty.db may still hold the pad content after the deletion entries. I'll
+  verify ueberdb2 still relies on this library for dbType: "dirty" and doesn't
+  compact the file.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● It uses dirty-ts, a TypeScript fork, not the dirty library I just read. I'll
+  check that fork too.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Confirmed that dirty-ts appends and never compacts, marking deletions as
+  key-only entries with no val—so the pads likely still exist in the current
+  file, not just a backup. I'll test the listing command on a small sample file
+  before running it on yours.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Yes. There are two ways to do it, depending on whether you have a backup, and
+  even without one the pads can probably be recovered. This assumes the server
+  uses "dbType": "dirty"; check settings.json first, because none of this
+  applies to MySQL, Postgres or other databases.
+
+  Why recovery is possible without a backup: Etherpad's dirty database (the
+  dirty-ts library, via ueberdb2) only ever appends to var/dirty.db. Each change
+  is one line of JSON, and a deletion is just another line with no value, like
+  {"key":"pad:test-polypaste"}. The file is never compacted, so the pads' data
+  is probably still there, before the deletion lines the test wrote. Recovering
+  means cutting the file off just before those deletions.
+
+  Run all commands from the top of the Etherpad tree.
+
+  Option A: you have a backup copy of dirty.db
+
+  1. Stop Etherpad. For example sudo systemctl stop etherpad, or however you run
+     it. Etherpad reads the whole file into memory at startup and keeps
+     appending to it, so it must not be running while you swap files.
+  2. Set the current file aside: mv var/dirty.db var/dirty.db.after-tests
+  3. Copy the backup in, keeping ownership and permissions: cp -a 
+     /path/to/backup/dirty.db var/dirty.db
+  4. Start Etherpad and open a couple of pads to check them.
+
+  Anything written after the backup was made is lost; the step 5 cutoff method
+  below could recover some of that from the .after-tests file if needed.
+
+  Option B: no backup — cut the current file
+
+  1. Stop Etherpad, as above.
+  2. Keep an untouched copy of the current file before changing anything:
+  cp -a var/dirty.db var/dirty.db.after-tests
+  3. List the pad deletions and their line numbers. This matches only deletions
+     of whole pads, not of their revisions or chat lines:
+  grep -n -E '^\{"key":"pad:[^:"]+"\}$' var/dirty.db.after-tests | tail -n 100
+     Expect a cluster of your real pad names, like pad:test-polypaste, close
+     together near the end. That's the test's bulk delete. Test-created pads
+     with random names will show up earlier; those are fine.
+  4. Pick the cutoff: the lowest line number among the real pads in that
+     cluster. The deletions run in parallel, so they aren't in alphabetical
+     order. Call that number N.
+  5. Write everything before line N to a new file:
+  head -n $((N-1)) var/dirty.db.after-tests > var/dirty.db.recovered
+  6. Check the result before using it. This replays the log the same way
+     Etherpad does and prints the pad names it ends up with:
+  node -e '
+  const fs = require("fs"), m = new Map();
+  for (const l of fs.readFileSync(process.argv[1], "utf8").split("\n")) {
+    if (!l) continue;
+    const r = JSON.parse(l);
+    if (r.val === undefined) m.delete(r.key); else m.set(r.key, r.val);
+  }
+  console.log([...m.keys()].filter((k) => 
+  /^pad:[^:]+$/.test(k)).sort().join("\n"));
+  ' var/dirty.db.recovered
+     Your real pads should be listed. If it fails with a JSON error, the cutoff
+     landed in the wrong place; recheck N.
+  7. Put it in place with the right ownership:
+  mv var/dirty.db.recovered var/dirty.db
+  chown --reference=var/dirty.db.after-tests var/dirty.db
+  chmod --reference=var/dirty.db.after-tests var/dirty.db
+  8. Start Etherpad and check a few pads, including their history in the
+     timeslider.
+
+  What Option B costs:
+  - Everything after the cutoff is lost. That includes the rest of the test run,
+    which you don't want anyway, but also any real edits made after it. If
+    people edited pads after the tests ran, tell me and we can build a merge
+    that keeps those lines and drops only the deletions.
+  - Test pads from before the cutoff remain. Pads the suite created earlier in
+    the run, with random names, will still be there. You can delete them from
+    /admin/pads.
+
+  A special case: if the live Etherpad server was running during the tests and
+  hasn't been restarted since, it may still show the pads. The test server ran
+  as a separate process on its own port, and the live server doesn't re-read the
+  file. It will lose the pads on its next restart, when it replays the
+  deletions. Run the recovery above before restarting it, but stop it at step 1
+  as usual.
+
+  I tested the listing, cutoff and replay commands on a small made-up dirty.db;
+  they worked, but I haven't tried them on your real file. Keep
+  var/dirty.db.after-tests until you're satisfied, because it's the only copy of
+  the original state.
+
+✻ Brewed for 1m 28s · done 10:32 PM
