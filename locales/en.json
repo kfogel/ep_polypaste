@@ -1,5 +1,5 @@
 {
-  "ep_polypaste.settings.format": "Copy format:",
+    "ep_polypaste.settings.format": "Copy→Paste format:",
   "ep_polypaste.format.tabs": "Plain text, TAB-indented",
   "ep_polypaste.format.tabs-markers": "Plain text, TAB-indented, with bullets/numbers",
   "ep_polypaste.format.markdown": "Markdown",

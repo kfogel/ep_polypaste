@@ -49,7 +49,7 @@ exports.eejsBlockMySettingsDropdowns = (hookName, context) => {
     `${escapeHtml(label)}</option>`)).join('');
   context.content += `
     <p class="dropdown-line">
-      <label for="ep_polypaste-format" data-l10n-id="ep_polypaste.settings.format">Copy format:</label>
+      <label for="ep_polypaste-format" data-l10n-id="ep_polypaste.settings.format">Copy→Paste format:</label>
       <select id="ep_polypaste-format">${options}</select>
     </p>`;
 };

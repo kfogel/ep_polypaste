@@ -31,8 +31,8 @@ It works by storing two versions of the selection on the clipboard:
 
 ## Supported Paste Formats
 
-In Etherpad, under **`Settings → Copy format`**, the user picks a
-paste format -- as of this writing, one of the choices below:
+In Etherpad, under **`Settings`→`Copy→Paste format`**, the user picks
+a paste format -- as of this writing, one of the choices below:
 
 <div style="margin-left: 40px;">
 
