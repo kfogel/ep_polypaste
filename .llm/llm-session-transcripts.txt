@@ -517,7 +517,7 @@ Claude Code v2.1.282 · Opus 5.5
 
 ※ recap: You're building an Etherpad plugin so copying from a pad keeps list nesting in TABs, Markdown, Org, Typst and other formats; Typst was just added and all tests pass. Next, you review the code and handle Git. (disable recaps in /config)
 
-===== SESSION BOUNDARY started=2026-09-25 =====
+===== SESSION BOUNDARY resumed=2026-09-25 =====
 
 Claude Code v2.1.282 · Opus 5.5
 
@@ -1003,3 +1003,1194 @@ Claude Code v2.1.282 · Opus 5.5
   untracked, so nothing was committed.
 
 ✻ Cooked for 5s · done 11:22 PM
+
+===== SESSION BOUNDARY resumed=2026-10-01 =====
+Claude Code v2.1.285 · Opus 5.5
+
+❯ /export                                                                       
+  ⎿  Conversation exported to: /home/kfogel/src/ep_polypaste/2026-09-28-232326-i
+     ve-loaded-this-plugin-on-an-etherpad-server-for.txt
+
+※ recap: You were fixing the broken Settings dropdowns, which turned out to be an Etherpad bug, and I've drafted an upstream bug report in the repo as `etherpad-reduced-motion-issue.md`. Next, review it, test the reproduction steps and file it yourself.
+
+❯ In an Etherpad installation, what is the difference between                   
+  'src/plugin_packages/PLUGIN_NAME' and 'src/node_modules/PLUGIN_NAME'?  Which  
+  one does Etherpad actually load at startup time?  If I want to uninstall a    
+  plugin, which one should I remove?  Or both?                                  
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Startup also reads var/installed_plugins.json and reinstalls everything listed
+  there, which matters for uninstalling. I'll check how plugins are found at
+  startup and how Etherpad's uninstall works.
+
+  Ran 2 shell commands (ctrl+o to expand)
+● src/plugin_packages/PLUGIN_NAME holds the plugin's actual files, and
+  src/node_modules/PLUGIN_NAME is normally just a symlink to that directory. So
+  both paths lead to the same files, and those are what Etherpad loads. To
+  uninstall, use Etherpad's own command, which removes both and also updates a
+  list you'd otherwise miss. This is from reading Etherpad's current develop
+  source, mainly src/static/js/pluginfw/installer.ts and LinkInstaller.ts. If
+  your server runs an older release, check that it behaves the same.
+
+  src/plugin_packages/PLUGIN_NAME
+  - This is the real installed copy. Etherpad's plugin installer (the
+    live-plugin-manager library) puts it there.
+  - With plugins i --path, it's a copy of your source directory as it was when
+    you installed.
+  - It's kept outside node_modules so that upgrading Etherpad doesn't wipe
+    installed plugins.
+
+  src/node_modules/PLUGIN_NAME
+  - This is normally a symlink to src/plugin_packages/PLUGIN_NAME.
+  - It exists so ordinary Node module loading works. The hook paths in ep.json
+    (like ep_polypaste/index:...) and the plugin's own require() calls resolve
+    through node_modules.
+
+  Which one is loaded: in effect, plugin_packages. The list of installed plugins
+  comes from the plugin installer, which reads plugin_packages. The code is
+  loaded through the node_modules symlink, so it's the same files.
+
+  What happens at startup:
+  - Missing symlinks get recreated. Etherpad scans src/plugin_packages/ and
+    creates a src/node_modules/ symlink for any plugin that lacks one.
+  - Listed plugins get reinstalled. Etherpad reads var/installed_plugins.json
+    and reinstalls every plugin listed there.
+
+  That's why there are really three things to clean up, not two.
+
+  To uninstall, use Etherpad's command rather than deleting directories:
+
+  pnpm run plugins rm PLUGIN_NAME
+
+  It removes the node_modules symlink, deletes the plugin_packages directory,
+  removes any dependencies no other plugin needs, and rewrites
+  var/installed_plugins.json.
+
+  If you delete things by hand, remove all three:
+  1. src/node_modules/PLUGIN_NAME (the symlink)
+  2. src/plugin_packages/PLUGIN_NAME
+  3. The plugin's entry in var/installed_plugins.json
+
+  If you remove only some of them:
+  - Only the symlink: it comes back at the next startup.
+  - Only plugin_packages: you leave a broken symlink.
+  - Either or both, but not the installed_plugins.json entry: Etherpad tries to
+    reinstall the plugin at startup. For a plugin installed from a local path
+    that isn't on npm, that probably just logs an error. For an npm-published
+    plugin, it would quietly come back.
+
+  This also explains the earlier ep_org_export duplicate. Installing under the
+  new name added a second entry rather than replacing the old one, so both
+  plugins were loaded until you removed the old one.
+
+✻ Cogitated for 36s · done Tuesday 7:59 PM
+
+❯ What is the recommended way to uninstall a plugin?  I want to temporarily     
+  uninstall ep_polypaste, for development purposes.  I'll probably re-install   
+  it again soon afterwards.                                                     
+
+● Etherpad has no way to disable a plugin short of uninstalling it, so use its
+  CLI. From the Etherpad root directory on the server:
+
+  pnpm run plugins rm ep_polypaste        # uninstall
+  # ... later ...
+  pnpm run plugins i --path /path/to/ep_polypaste   # reinstall from your 
+  working tree
+
+  Restart Etherpad after each command, then hard-reload any open pads. The CLI
+  runs as its own process, so a server that's already running won't notice the
+  change.
+
+  What to expect:
+  - Settings are kept. The rm command leaves any "ep_polypaste": {...} block in
+    settings.json alone. Without the plugin nothing reads it, so it's harmless,
+    and it applies again when you reinstall.
+  - Users' chosen formats are kept. Each browser stores its Copy format choice
+    in localStorage under ep_polypaste.format, so it comes back after the
+    reinstall.
+  - The reinstall gives you a fresh copy. Because rm deletes the old copy in
+    src/plugin_packages/, the reinstall copies your current working tree. That's
+    also the safest way to pick up code changes. I haven't checked whether
+    running i --path over an existing install without a version bump replaces
+    the files, so rm then i is the reliable routine.
+
+  The admin page at /admin/plugins can also uninstall plugins without a restart.
+  But plugins installed from a local path can only be reinstalled with the CLI,
+  so for this round trip the CLI is simpler.
+
+✻ Crunched for 11s · done Tuesday 8:00 PM
+
+❯ When you say the "Etherpad root directory", do you mean the topmost directory 
+  that looks like an Etherpad source tree, or do you mean the parent of that    
+  directory?                                                                    
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I mean the topmost directory of the Etherpad source tree, not its parent.
+  That's the checkout itself, usually named etherpad-lite. It's where
+  settings.json lives, alongside the src/, bin/ and var/ subdirectories.
+
+  That directory's package.json defines the plugins script as pnpm --filter bin 
+  run plugins, and pnpm run plugins only finds it there. In the parent directory
+  it won't find the script, and inside src/ it finds a different package.json
+  that doesn't have it.
+
+  Because of that --filter bin, the command actually runs from inside bin/, not
+  from where you typed it. So pass an absolute path to --path, as in my example.
+  A relative path like ../ep_polypaste would probably be looked up from bin/
+  and not find your plugin. I haven't tested that, but an absolute path avoids
+  the question.
+
+✻ Cogitated for 10s · done Tuesday 8:01 PM
+
+※ recap: We're getting ep_polypaste's Settings menu working and cleaning up its install; the empty menus turned out to be an Etherpad bug, drafted as an upstream report. Next, run `pnpm run plugins rm ep_polypaste` from the Etherpad checkout and restart. (disable recaps in /config)
+
+❯ How can I list all the extra plugins installed on an Etherpad server?         
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Run this from the top of the Etherpad tree:
+
+  pnpm run plugins ls
+
+  It prints something like Installed plugins are: ep_etherpad-lite, 
+  ep_polypaste, ep_print, .... The first entry, ep_etherpad-lite, is Etherpad
+  itself; everything else is an extra plugin.
+
+  That command only reads var/installed_plugins.json and doesn't check what's
+  actually installed. To see what really loads, use one of these:
+
+  - Look on disk:
+  ls src/plugin_packages/            # installed copies (ignore .versions)
+  ls -l src/node_modules/ | grep ep_   # the symlinks Etherpad loads through
+    If installed_plugins.json and src/plugin_packages/ disagree, like the
+    leftover ep_org_export earlier, that's worth cleaning up.
+  - Use the admin page: /admin/plugins lists the plugins the running server
+    loaded, with version numbers. You need admin access.
+  - Check from outside the server:
+    https://<server>/pluginfw/plugin-definitions.json lists the plugins the
+    running server has loaded. I believe it doesn't need a login, but I haven't
+    checked.
+
+✻ Crunched for 11s · done Tuesday 8:08 PM
+
+※ recap: You're debugging ep_polypaste on your Etherpad sandbox, and the broken Settings menus turned out to be an Etherpad reduced-motion bug. Next, review and test the draft upstream report in etherpad-reduced-motion-issue.md, then file it yourself. (disable recaps in /config)
+
+❯ How would you explain your suggested fix?  Why is it correct?  What does it   
+  do?                                                                           
+
+● The fix changes one value in Etherpad's reduced-motion CSS rule for the
+  Settings panel, from transform: scale(1) to transform: none. It works because
+  the two look identical but are not equivalent in CSS.
+
+  What the old value does. scale(1) means "scale to 100%", so on its own it
+  changes nothing visually. But in CSS, any element whose transform is anything
+  other than none takes on some layout roles, even an identity transform like
+  scale(1). The relevant one here: it becomes the reference box for all its
+  position: fixed descendants. Normally a fixed element is positioned relative
+  to the browser window. Inside a transformed ancestor, it's positioned relative
+  to that ancestor instead. This is standard, specified behaviour; filter,
+  perspective and will-change: transform have the same effect.
+
+  Why that breaks the menus. The dropdown lists are position: fixed so they can
+  float outside the popup's scroll area. When a list opens, Etherpad's
+  nice-select code measures where the menu button is on screen, relative to the
+  window, and writes those numbers into the list's left and top. The browser
+  then measures them from the panel's top-left corner instead of the window's.
+  The panel's own distance from the window's corner gets counted twice, and the
+  list lands that far down and to the right. On your pad that pushed it to about
+  x=2123 in a 1,400-pixel-wide window, off-screen and clipped by the panel.
+
+  What the new value does. transform: none means no transform at all, so the
+  panel is no longer the reference box. The window is again, which is what
+  nice-select's arithmetic assumes. It looks exactly the same as scale(1),
+  because scale(1) never changed the appearance anyway.
+
+  Why I'm confident it's right:
+  - It matches the normal case. With no motion preference, the panel's transform
+    is already none; my headless test showed it. That's the configuration
+    everyone without reduced motion uses, where the menus work. The fix just
+    gives reduced-motion users the same value everyone else already has.
+  - I tested it. With the override injected and reduced motion emulated, the
+    Font type list opened at exactly the same place as the no-preference run
+    (left: 1136, top: 450).
+  - It keeps what the rule is for. The rule exists to switch off animation for
+    people who asked for less motion. The transition: none beside it still does
+    that, and the fix leaves it alone.
+
+  Caveats a reviewer might raise:
+  - Layering. A non-none transform also puts the element in its own drawing
+    layer (a "stacking context"), which affects how z-index layering works.
+    Removing it could in principle change what draws on top of what. In
+    practice, the popup around the panel almost certainly creates its own layer
+    already, and the panel already runs without one for users without reduced
+    motion. I haven't checked the popup's CSS to confirm, though.
+  - A sturdier alternative. The fix removes the trigger, not the fragility.
+    nice-select still assumes nothing between the list and the window has a
+    transform. A future style or plugin that puts a transform or filter on the
+    popup would break the menus again. A more thorough fix would make
+    nice-select account for such an ancestor when positioning the list. That's a
+    bigger change and harder to review, so I'd propose the one-liner and
+    perhaps mention this as a follow-up in the issue.
+  - Animation. The popup's opening zoom (scale(0.7) with a transition) is set on
+    the outer .popup element, which this rule doesn't touch. As far as I can
+    tell, reduced-motion users still see that zoom both before and after the
+    fix. It's a separate issue, and the fix neither causes nor cures it.
+
+✻ Baked for 22s · done Tuesday 8:41 PM
+
+❯ Add that explanation to the draft bug report.                                 
+
+  Read 1 file, ran 1 shell command (ctrl+o to expand)
+
+● This confirms .popup uses position: absolute with z-index: 500, creating its
+  own stacking context. Since the draft isn't in the plugin directory anymore,
+  I'll search for where it moved to.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● You renamed it to etherpad-reduced-motion-bug-draft-report.md and committed
+  it. I'll read your version, since you may have edited it.
+
+  Read 1 file (ctrl+o to expand)
+
+● I'll add the explanation to the "Suggested fix" section since "Cause" already
+  covers the positioning issue—covering why the fix works, plus caveats, with
+  the layering point marked as checked.
+
+● Update(etherpad-reduced-motion-bug-draft-report.md)
+  ⎿  Added 41 lines, removed 6 lines
+      119     }
+      120  ```
+      121  
+      122 -I tested this by injecting the override into the page from the
+          - Puppeteer script                                             
+      123 -above.  With `transform: none`, the reduced-motion run matches
+          - the                                                          
+      124 -no-preference run exactly (`listLeft: 1136, listTop: 450, list
+          -OnScreen: true`).                                             
+      122 +`none` and `scale(1)` render identically, but `none` doesn't m
+          +ake                                                           
+      123 +`.popup-content` the containing block for fixed-position desce
+          +ndants.  The                                                  
+      124 +viewport becomes their containing block again, which is what n
+          +ice-select's                                                  
+      125 +positioning code assumes.                                     
+      126  
+      126 -(The `.nice-select .list` rule in the same media query also us
+          -es                                                            
+      127 -`scale(1) translateY(0px)`, but it's on the list itself, not a
+          -n ancestor, so it                                             
+      128 -doesn't affect this bug.)                                     
+      127 +Why this is the right fix:                                    
+      128  
+      129 +- **It matches the path that already works.**  Without a motio
+          +n preference,                                                 
+      130 +  `.popup-content`'s computed transform is already `none` (see
+          + the                                                          
+      131 +  `popupTransform` values in the output above), and the dropdo
+          +wns work.  The                                                
+      132 +  fix gives reduced-motion users the same value everyone else 
+          +already gets.                                                 
+      133 +- **It's tested.**  I injected the override into the page from
+          + the Puppeteer                                                
+      134 +  script above.  With `transform: none`, the reduced-motion ru
+          +n matches the                                                 
+      135 +  no-preference run exactly (`listLeft: 1136, listTop: 450, li
+          +stOnScreen: true`).                                           
+      136 +- **It keeps the rule's purpose.**  The rule exists to switch 
+          +off animation for                                             
+      137 +  users who asked for less motion.  The `transition: none` nex
+          +t to it still does                                            
+      138 +  that, and the fix leaves it alone.                          
+      139 +                                                              
+      140 +Notes for review:                                             
+      141 +                                                              
+      142 +- **Stacking.**  A non-`none` transform also creates a stackin
+          +g context, so                                                 
+      143 +  removing it could in principle change `z-index` layering.  I
+          +t doesn't here:                                               
+      144 +  the enclosing `.popup` is `position: absolute` with `z-index
+          +: 500`                                                        
+      145 +  (`css/pad/popup.css`), so it already creates a stacking cont
+          +ext around                                                    
+      146 +  `.popup-content`.  And without a motion preference, `.popup-
+          +content` already                                              
+      147 +  has no transform.                                           
+      148 +- **A sturdier alternative.**  This fix removes the trigger, n
+          +ot the underlying                                             
+      149 +  fragility.  `nice-select.ts` still assumes no ancestor of a 
+          +fixed-position                                                
+      150 +  list has a `transform`, `filter`, `perspective`, `will-chang
+          +e: transform`,                                                
+      151 +  etc.  A future style or plugin that adds one to a popup woul
+          +d break the                                                   
+      152 +  dropdowns the same way.  A more thorough fix would have nice
+          +-select allow for                                             
+      153 +  such an ancestor when positioning the list (for example by s
+          +ubtracting the                                                
+      154 +  containing block's offset).  That's a larger change; it may 
+          +be worth a                                                    
+      155 +  follow-up.                                                  
+      156 +- **Animation.**  The popup's open/close zoom (`scale(0.7)` pl
+          +us a `transition`)                                            
+      157 +  is set on the outer `.popup` in `css/pad/popup.css`, not on 
+          +`.popup-content`,                                             
+      158 +  and this media query doesn't override it.  So reduced-motion
+          + users apparently                                             
+      159 +  still see that zoom, both before and after this fix.  That's
+          + a separate issue;                                            
+      160 +  this fix neither causes nor cures it.                       
+      161 +- The `.nice-select .list` rule in the same media query also u
+          +ses                                                           
+      162 +  `scale(1) translateY(0px)`, but it's on the list itself, not
+          + an ancestor, so                                              
+      163 +  it doesn't affect this bug.                                 
+      164 +                                                              
+      165  ### Environment
+      166  
+      167  - Etherpad version: <!-- TODO: fill in from the admin page / p
+           ackage.json -->
+
+● I added the explanation to etherpad-reduced-motion-bug-draft-report.md under
+  "Suggested fix". It's not committed; your earlier commit has the version
+  before this change.
+
+  The existing "Cause" section already explains how scale(1) changes what
+  fixed-position lists are measured from, so I didn't repeat that. The new
+  material has two parts:
+
+  - Why this is the right fix: it gives reduced-motion users the same value
+    everyone else already has, it passed my Puppeteer test, and transition: none
+    still switches off the animation.
+  - Notes for review:
+    - Layering: I checked this since my last message, so it's stated as fact
+      rather than as a guess. .popup is position: absolute with z-index: 500, so
+      removing the panel's transform can't change how it layers against the
+      rest of the page.
+    - A sturdier alternative: making nice-select account for a transformed
+      ancestor, suggested as a possible follow-up.
+    - The popup's zoom animation: apparently still plays for reduced-motion
+      users. That's a separate issue, marked as such.
+    - The .nice-select .list rule: moved here from its own paragraph, unchanged.
+
+  The Etherpad version is still a TODO in the Environment section.
+
+✻ Cogitated for 31s · done Tuesday 8:57 PM
+
+❯ How long does the etherpad back-end test suite take to run on a typical cloud 
+  VPS?                                                                          
+
+● GitHub's standard Actions runners (2–4 vCPUs, 7–16 GB RAM) are roughly a
+  typical small cloud VPS. So Etherpad's own CI timings for its back-end tests
+  are a good benchmark, and I'll look them up rather than guess.
+
+  Ran 5 shell commands (ctrl+o to expand)
+
+● Whole runs take about 3–3.5 minutes, but that includes setup and several
+  parallel jobs. I'll get the per-step times for the Linux test jobs.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Probably about 1–2 minutes on a typical small VPS, not counting setup. That's
+  an estimate: I couldn't time it on a VPS, so it's scaled from Etherpad's own
+  CI timings.
+
+  What Etherpad's CI shows. I pulled step timings for the two most recent
+  successful "Backend tests" runs on develop (September 24 and 28, 2026). They
+  run on GitHub's ubuntu-latest machines, which for public repositories have 4
+  vCPUs and 16 GB of RAM.
+
+  ┌────────────────────────────────┬───────────────────┬───────────────────┐
+  │              Step              │  Without plugins  │   With plugins    │
+  ├────────────────────────────────┼───────────────────┼───────────────────┤
+  │ pnpm test (main back-end       │ 40 s              │ 46–47 s           │
+  │ suite)                         │                   │                   │
+  ├────────────────────────────────┼───────────────────┼───────────────────┤
+  │ pnpm run test:vitest (newer    │ 4–6 s             │ 5–6 s             │
+  │ tests)                         │                   │                   │
+  ├────────────────────────────────┼───────────────────┼───────────────────┤
+  │ Whole job, including checkout  │ 1 min 16 s – 1    │ 1 min 32 s – 1    │
+  │ and setup                      │ min 32 s          │ min 44 s          │
+  └────────────────────────────────┴───────────────────┴───────────────────┘
+
+  The dependency install in CI takes only about 5 seconds because the pnpm
+  package store is cached. A first pnpm i on a fresh VPS downloads everything
+  and could take a few minutes.
+
+  For a typical VPS:
+  - With 4 vCPUs, expect about the same: roughly 45–55 seconds of tests.
+  - With 1–2 vCPUs, which is common for cheap plans, expect slower, perhaps 1–2
+    minutes. I'm assuming that because the suite runs a real Etherpad server and
+    much of its time goes to the CPU, but I haven't measured it.
+  - Adding plugins, as in CI's "with plugins" job, adds about 10–15%.
+
+  The easiest way to get a real number for your machine is to run time pnpm test
+  from the Etherpad tree once dependencies are installed. Before running it on
+  your sandbox server, check whether the tests would touch its live
+  configuration or database.
+
+✻ Crunched for 39s · done Tuesday 9:01 PM
+
+※ recap: You're debugging ep_polypaste's broken Settings dropdowns, which turned out to be an Etherpad reduced-motion CSS bug, and the draft upstream report now includes the fix explanation. Next, review the uncommitted draft, fill in the Etherpad version, and file it. (disable recaps in /config)
+
+❯ Is there some reason why running the Etherpad test suite (front-end and       
+  back-end) on an Etherpad instance would wipe out the instance's pads?         
+
+● I'll check Etherpad's test setup code rather than answer from memory.
+
+  Ran 1 shell command (ctrl+o to expand)
+● The back-end tests use whatever database is set in settings.json, with test
+  setup only overriding port, IP, and rate limits. Next I'll check if any tests
+  perform bulk pad deletions.
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+● Found it: one back-end test deletes every pad in the database. I'll confirm
+  which database the tests use and check the front-end and admin tests too.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Yes. Etherpad's back-end tests run against the database configured in the
+  instance's own settings.json. One of them deletes every pad in that database.
+  I read this in the current develop source; I haven't run it, but the code is
+  unambiguous.
+
+  The test that deletes everything: src/tests/backend/specs/lowerCasePadIds.ts
+  has this cleanup helper:
+
+  const cleanUpPads = async () => {
+    const {padIDs} = await padManager.listAllPads();
+    await Promise.all(padIDs.map(async (padId: string) => {
+      if (await padManager.doesPadExist(padId)) {
+        const pad = await padManager.getPad(padId);
+        await pad.remove();
+      }
+    }));
+  };
+
+  It runs before and after every test in that file. It lists all pads in the
+  database, not just ones the test created, and removes each one with its
+  revisions and chat.
+
+  Why that reaches your real pads:
+  - pnpm test loads the instance's settings. It runs mocha inside the Etherpad
+    tree, and the test setup starts an Etherpad server in-process using the
+    normal settings loader. That reads the top-level settings.json (or whatever
+    --settings names), including dbType and dbSettings.
+  - The test setup doesn't swap the database. src/tests/backend/common.ts only
+    changes the port, bind address and rate limits. So the tests get the same
+    database as the live instance, whether that's var/dirty.db, MySQL, Postgres
+    or anything else.
+  - CI doesn't notice. It runs on a throwaway checkout with a fresh dirty.db, so
+    there's nothing to lose.
+
+  Other back-end tests create and delete pads with their own, usually random,
+  names. They'll leave scratch pads and authors behind if a run is interrupted,
+  but I found no other bulk deletion.
+
+  The front-end tests (Playwright, pnpm run test-ui) drive a server at
+  localhost:9001 through a browser. From a quick grep, they create their own
+  random-named pads and delete only those. I didn't find any bulk deletion in
+  them or in the admin UI tests, but I didn't audit every test file. The risk to
+  existing pads comes from the back-end suite.
+
+  To run the tests safely:
+  - Use a separate Etherpad checkout with its own settings.json and a throwaway
+    database. This is the simplest option.
+  - Or point the tests at a scratch settings file. Something like pnpm test -- 
+    --settings /path/to/test-settings.json, with a dbSettings.filename of its
+    own. Etherpad's settings loader accepts a --settings option, but I haven't
+    verified that it's passed through when running under mocha. Check the log
+    line settings loaded from: ... before trusting it.
+  - Back up the database first in any case: copy var/dirty.db, or dump MySQL or
+    Postgres.
+
+  If your sandbox lost its pads after a test run, this test is almost certainly
+  the cause. With the default dirty database, a backup copy of var/dirty.db from
+  before the run would bring them back.
+
+✻ Brewed for 53s · done Tuesday 10:28 PM
+
+❯ Can you tell me how to restore from var/dirty.db, step by step?               
+
+● Before writing steps, I'll check how the dirty database stores data, because
+  that affects whether recovery is possible even without a backup.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The dirty library logs deletions as extra lines rather than removing data, so
+  your dirty.db may still hold the pad content after the deletion entries. I'll
+  verify ueberdb2 still relies on this library for dbType: "dirty" and doesn't
+  compact the file.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● It uses dirty-ts, a TypeScript fork, not the dirty library I just read. I'll
+  check that fork too.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Confirmed that dirty-ts appends and never compacts, marking deletions as
+  key-only entries with no val—so the pads likely still exist in the current
+  file, not just a backup. I'll test the listing command on a small sample file
+  before running it on yours.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Yes. There are two ways to do it, depending on whether you have a backup, and
+  even without one the pads can probably be recovered. This assumes the server
+  uses "dbType": "dirty"; check settings.json first, because none of this
+  applies to MySQL, Postgres or other databases.
+
+  Why recovery is possible without a backup: Etherpad's dirty database (the
+  dirty-ts library, via ueberdb2) only ever appends to var/dirty.db. Each change
+  is one line of JSON, and a deletion is just another line with no value, like
+  {"key":"pad:test-polypaste"}. The file is never compacted, so the pads' data
+  is probably still there, before the deletion lines the test wrote. Recovering
+  means cutting the file off just before those deletions.
+
+  Run all commands from the top of the Etherpad tree.
+
+  Option A: you have a backup copy of dirty.db
+
+  1. Stop Etherpad. For example sudo systemctl stop etherpad, or however you run
+     it. Etherpad reads the whole file into memory at startup and keeps
+     appending to it, so it must not be running while you swap files.
+  2. Set the current file aside: mv var/dirty.db var/dirty.db.after-tests
+  3. Copy the backup in, keeping ownership and permissions: cp -a 
+     /path/to/backup/dirty.db var/dirty.db
+  4. Start Etherpad and open a couple of pads to check them.
+
+  Anything written after the backup was made is lost; the step 5 cutoff method
+  below could recover some of that from the .after-tests file if needed.
+
+  Option B: no backup — cut the current file
+
+  1. Stop Etherpad, as above.
+  2. Keep an untouched copy of the current file before changing anything:
+  cp -a var/dirty.db var/dirty.db.after-tests
+  3. List the pad deletions and their line numbers. This matches only deletions
+     of whole pads, not of their revisions or chat lines:
+  grep -n -E '^\{"key":"pad:[^:"]+"\}$' var/dirty.db.after-tests | tail -n 100
+     Expect a cluster of your real pad names, like pad:test-polypaste, close
+     together near the end. That's the test's bulk delete. Test-created pads
+     with random names will show up earlier; those are fine.
+  4. Pick the cutoff: the lowest line number among the real pads in that
+     cluster. The deletions run in parallel, so they aren't in alphabetical
+     order. Call that number N.
+  5. Write everything before line N to a new file:
+  head -n $((N-1)) var/dirty.db.after-tests > var/dirty.db.recovered
+  6. Check the result before using it. This replays the log the same way
+     Etherpad does and prints the pad names it ends up with:
+  node -e '
+  const fs = require("fs"), m = new Map();
+  for (const l of fs.readFileSync(process.argv[1], "utf8").split("\n")) {
+    if (!l) continue;
+    const r = JSON.parse(l);
+    if (r.val === undefined) m.delete(r.key); else m.set(r.key, r.val);
+  }
+  console.log([...m.keys()].filter((k) => 
+  /^pad:[^:]+$/.test(k)).sort().join("\n"));
+  ' var/dirty.db.recovered
+     Your real pads should be listed. If it fails with a JSON error, the cutoff
+     landed in the wrong place; recheck N.
+  7. Put it in place with the right ownership:
+  mv var/dirty.db.recovered var/dirty.db
+  chown --reference=var/dirty.db.after-tests var/dirty.db
+  chmod --reference=var/dirty.db.after-tests var/dirty.db
+  8. Start Etherpad and check a few pads, including their history in the
+     timeslider.
+
+  What Option B costs:
+  - Everything after the cutoff is lost. That includes the rest of the test run,
+    which you don't want anyway, but also any real edits made after it. If
+    people edited pads after the tests ran, tell me and we can build a merge
+    that keeps those lines and drops only the deletions.
+  - Test pads from before the cutoff remain. Pads the suite created earlier in
+    the run, with random names, will still be there. You can delete them from
+    /admin/pads.
+
+  A special case: if the live Etherpad server was running during the tests and
+  hasn't been restarted since, it may still show the pads. The test server ran
+  as a separate process on its own port, and the live server doesn't re-read the
+  file. It will lose the pads on its next restart, when it replays the
+  deletions. Run the recovery above before restarting it, but stop it at step 1
+  as usual.
+
+  I tested the listing, cutoff and replay commands on a small made-up dirty.db;
+  they worked, but I haven't tried them on your real file. Keep
+  var/dirty.db.after-tests until you're satisfied, because it's the only copy of
+  the original state.
+
+✻ Brewed for 1m 28s · done Tuesday 10:32 PM
+
+❯ /export                                                                       
+  ⎿  Conversation exported to: /home/kfogel/src/ep_polypaste/2026-09-29-223617-i
+     ve-loaded-this-plugin-on-an-etherpad-server-for.txt
+
+❯ (Note I've committed some changes since we last spoke.)  There's a minor bug: 
+  in Etherpad, with the ep_hyperlinked_text plugin, hyperlinked text gets an    
+  extra zero-width non-joiner character (Unicode 8203) on each side of the      
+  linked text.  I believe this is to help users pick a location to insert text  
+  either within or not within the hyperlink, when editing the pad in the        
+  browser.  However, when we're copying and pasting with this ep_polypaste      
+  plugin, we should remove those two extra characters -- they are just a        
+  distraction in the pasted text, no matter what the output format.             
+  ⎿  1 skill available
+  ⎿  Not logged in · Please run /login
+
+✻ Worked for 0s · done 3:42 PM
+
+❯ /login 
+  ⎿  Login successful
+
+  Ran 1 shell command (ctrl+o to expand)
+  ⎿  15 skills available
+
+● First I'll check what ep_hyperlinked_text actually inserts and where, since
+  that decides where to strip it.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The plugin inserts a zero-width space (U+200B, not U+200C) as a real character
+  outside the linked span, so it ends up in the clipboard output. I'll check
+  how formats.js builds its text runs next.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Found two U+200B characters flanking the linked text, which I'll strip during
+  line model construction so all output formats and clipboard HTML get fixed
+  together. Next I'll review how existing tests build documents to match that
+  style for new tests.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I'll identify link padding positions using the full line rather than just the
+  selected portion, so padding adjacent to links gets dropped correctly even
+  when the selection boundary falls right next to a link.
+
+● Update(static/js/formats.js)
+  ⎿  Added 36 lines, removed 3 lines
+       97    return runs;
+       98  };
+       99  
+      100 -// Splits text[from, to) into formatted segments.             
+      101 -const segmentsOf = (text, runs, from, to) => {                
+      100 +// ep_hyperlinked_text puts a zero-width space just outside ea
+          +ch end                                                        
+      101 +// of a link, so the user can put the cursor either inside or 
+          +outside                                                       
+      102 +// the link.  These are editing aids, not content.            
+      103 +const ZWSP = '';                                              
+      104 +                                                              
+      105 +// Returns the set of positions in `text` holding a zero-width
+          + space                                                        
+      106 +// that pads a link: one without the hyperlink attribute, next
+          + to a                                                         
+      107 +// character that has it.  The whole line is examined, so that
+          + padding                                                      
+      108 +// is recognized even when the selection excludes the link its
+          +elf.                                                          
+      109 +const linkPadding = (text, runs) => {                         
+      110 +  const drop = new Set();                                     
+      111 +  if (!text.includes(ZWSP)) return drop;                      
+      112 +  const hrefAt = (pos) => {                                   
+      113 +    const run = runs.find((r) => r.start <= pos && pos < r.end
+          +);                                                            
+      114 +    return !!(run && run.attrs.hyperlink);                    
+      115 +  };                                                          
+      116 +  for (let p = text.indexOf(ZWSP); p >= 0; p = text.indexOf(ZW
+          +SP, p + 1)) {                                                 
+      117 +    if (!hrefAt(p) && (hrefAt(p - 1) || hrefAt(p + 1))) drop.a
+          +dd(p);                                                        
+      118 +  }                                                           
+      119 +  return drop;                                                
+      120 +};                                                            
+      121 +                                                              
+      122 +// Returns text[a, b) without the characters at positions in `
+          +drop`.                                                        
+      123 +const sliceWithout = (text, a, b, drop) => {                  
+      124 +  if (!drop.size) return text.slice(a, b);                    
+      125 +  let s = '';                                                 
+      126 +  for (let p = a; p < b; p++) if (!drop.has(p)) s += text[p]; 
+      127 +  return s;                                                   
+      128 +};                                                            
+      129 +                                                              
+      130 +// Splits text[from, to) into formatted segments, leaving out 
+          +the                                                           
+      131 +// characters at positions in `drop`.                         
+      132 +const segmentsOf = (text, runs, from, to, drop = new Set()) =>
+          + {                                                            
+      133    const segs = [];
+      134    for (const run of runs) {
+      135      const a = Math.max(from, run.start);
+      136      const b = Math.min(to, run.end, text.length);
+      137      if (a >= b) continue;
+      138 +    const segText = sliceWithout(text, a, b, drop);           
+      139 +    if (segText === '') continue;                             
+      140      const seg = {
+      108 -      text: text.slice(a, b),                                 
+      141 +      text: segText,                                          
+      142        b: !!run.attrs.bold,
+      143        i: !!run.attrs.italic,
+      144        u: !!run.attrs.underline,
+
+● Update(static/js/formats.js)
+  ⎿  Added 1 line, removed 1 line
+      157    // kept plain.
+      158    const covered = runs.length ? runs[runs.length - 1].end : 0;
+      159    if (to > covered && covered < text.length) {
+      160 -    segs.push({text: text.slice(Math.max(from, covered), to), 
+      160 +    segs.push({text: sliceWithout(text, Math.max(from, covered
+          +), to, drop),                                                 
+      161        b: false, i: false, u: false, s: false, href: null});
+      162    }
+      163    return segs;
+
+● Update(static/js/formats.js)
+  ⎿  Added 4 lines, removed 1 line
+      168    const {text, aline, lineMarker} = docLine;
+      169    const runs = attributeRuns(aline, pool);
+      170    const lineAttrs = lineMarker && runs.length ? runs[0].attrs 
+           : {};
+      171 -  const line = {kind: 'para', segs: segmentsOf(text, runs, Mat
+          -h.max(from, lineMarker), to)};                                
+      171 +  const line = {                                              
+      172 +    kind: 'para',                                             
+      173 +    segs: segmentsOf(text, runs, Math.max(from, lineMarker), t
+          +o, linkPadding(text, runs)),                                  
+      174 +  };                                                          
+      175    const list = /^([a-z]+)([0-9]+)$/.exec(lineAttrs.list || '')
+           ;
+      176    const heading = /^h([1-6])$/.exec(lineAttrs.heading || '');
+      177    if (list) {
+● Now tests. I'll look at the existing link test and the test helpers to match
+  their style.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Update(test/formats.test.js)
+  ⎿  Added 37 lines
+      261    });
+      262  });
+      263  
+      264 +describe('link padding', () => {                              
+      265 +  // ep_hyperlinked_text puts a zero-width space on each side 
+          +of a link.                                                    
+      266 +  const Z = '';                                               
+      267 +  const LINKED = {text: `see ${Z}site${Z} now`, spans: [[5, 9,
+          + {hyperlink: 'https://x.org/'}]]};                            
+      268 +                                                              
+      269 +  it('drops the zero-width spaces around a link', () => {     
+      270 +    assert.equal(renderAll('tabs', [LINKED]), 'see site now');
+      271 +    assert.equal(renderAll('markdown', [LINKED]), 'see [site](
+          +<https://x.org/>) now');                                      
+      272 +    const doc = makeDoc([LINKED]);                            
+      273 +    assert.equal(f.renderClipboardHtml(f.extractSelection(doc,
+          + ...selectAll(doc))),                                         
+      274 +        'see <a href="https://x.org/" class="hyperlink hyperli
+          +nk-https%3A%2F%2Fx.org%2F">site</a> now');                    
+      275 +  });                                                         
+      276 +                                                              
+      277 +  it('drops padding even when the selection leaves out the lin
+          +k', () => {                                                   
+      278 +    const doc = makeDoc([LINKED]);                            
+      279 +    assert.equal(f.render('tabs', f.extractSelection(doc, [0, 
+          +9], [0, 14])), ' now');                                       
+      280 +    assert.equal(f.render('tabs', f.extractSelection(doc, [0, 
+          +0], [0, 5])), 'see ');                                        
+      281 +  });                                                         
+      282 +                                                              
+      283 +  it('drops padding around a link at the start of a list item'
+          +, () => {                                                     
+      284 +    assert.equal(renderAll('tabs-markers', [                  
+      285 +      {text: `${Z}site${Z}`, list: 'bullet1', spans: [[1, 5, {
+          +hyperlink: 'https://x.org/'}]]},                              
+      286 +    ]), '- site');                                            
+      287 +  });                                                         
+      288 +                                                              
+      289 +  it('keeps zero-width spaces that are not next to a link', ()
+          + => {                                                         
+      290 +    assert.equal(renderAll('tabs', [`a${Z}b`]), `a${Z}b`);    
+      291 +  });                                                         
+      292 +                                                              
+      293 +  it('leaves no padding in any format', () => {               
+      294 +    for (const {id} of f.FORMATS) {                           
+      295 +      if (id === 'native') continue;                          
+      296 +      assert.ok(!renderAll(id, [LINKED]).includes(Z), id);    
+      297 +    }                                                         
+      298 +  });                                                         
+      299 +});                                                           
+      300 +                                                              
+      301  describe('every format', () => {
+      302    it('handles an empty-text list item and a lone blank line', 
+           () => {
+      303      for (const {id} of f.FORMATS) {
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Only my expected string was wrong: selecting a whole line wraps it in <p>. The
+  padding itself is gone, so I'll correct the expectation.
+
+● Bash(sed -i "s|        'see <a href=\"https://x.org/\" class=\"hyperlink
+      hyperlink-https%3A%2F%2Fx.org%2F\">site</a> now');|        '<p>see <a
+      href=\"https://x.org/\…)
+  ⎿  ℹ tests 37
+     ℹ pass 37
+     ℹ fail 0
+  ⎿  Updated test/formats.test.js (+1 -1)
+      271      assert.equal(renderAll('markdown', [LINKED]), 'see [site](
+           <https://x.org/>) now');
+      272      const doc = makeDoc([LINKED]);
+      273      assert.equal(f.renderClipboardHtml(f.extractSelection(doc,
+            ...selectAll(doc))),
+      274 -        'see <a href="https://x.org/" class="hyperlink hyperli
+          -nk-https%3A%2F%2Fx.org%2F">site</a> now');                    
+      274 +        '<p>see <a href="https://x.org/" class="hyperlink hype
+          +rlink-https%3A%2F%2Fx.org%2F">site</a> now</p>');             
+      275    });
+      276  
+      277    it('drops padding even when the selection leaves out the lin
+           k', () => {
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Copying text that contains a link no longer brings along the two invisible
+  padding characters, in every format and in the HTML pasted into rich-text
+  apps. All 37 tests pass, including 5 new ones, but I haven't tried it on your
+  Etherpad server. Nothing is committed.
+
+  The character is actually U+200B ZERO WIDTH SPACE, which is decimal 8203.
+  Zero-width non-joiner is U+200C (8204). ep_hyperlinked_text inserts the
+  zero-width spaces as real characters in the pad's text, just outside the
+  linked span. Its source comment confirms your guess: they're there so the
+  cursor can sit just inside or just outside the link.
+
+  What I changed in static/js/formats.js:
+  - Only the padding is removed. A zero-width space is dropped only if it isn't
+    part of the link and sits right next to a linked character. Any other
+    zero-width space, such as one someone typed deliberately, is kept.
+  - The check uses the whole line, not just your selection. So if you select
+    text that stops right next to a link, the padding character at the edge is
+    still dropped.
+  - One change covers every output. I strip the characters when the line is
+    first read from the pad, so every output format and the HTML clipboard copy
+    get the fix.
+
+  New tests in test/formats.test.js:
+  - Padding is removed in TAB text, Markdown and the clipboard HTML.
+  - It's removed when the selection stops right next to a link without including
+    it.
+  - It's removed around a link at the start of a list item.
+  - A zero-width space that isn't next to a link is kept.
+  - No output format contains the padding.
+
+  When you copy a link from one pad and paste it into another, the pasted link
+  won't have the padding. ep_hyperlinked_text only adds it when you create a
+  link with its own button, as far as I can tell. So in the destination pad it
+  may be a little harder to put the cursor right at the link's edge. That fits
+  your "no matter what the output format", but I wanted you to know.
+
+  To try it on the server, reinstall the plugin with rm then i --path as before,
+  and restart Etherpad.
+
+✻ Worked for 2m 23s · done 3:45 PM
+
+※ recap: I'm fixing your ep_polypaste plugin so copied links no longer carry ep_hyperlinked_text's invisible zero-width spaces, and the tests pass but nothing is committed yet. Next, reinstall the plugin on your Etherpad server and try copying a link. (disable recaps in /config)
+
+❯ To make pasting between pads preserve the zero-width spaces, we would have to 
+  make the HTML output format not strip them, right?                            
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Not quite. The format that matters is the HTML copy the plugin puts on the
+  clipboard for rich-text apps, not the "HTML source" choice in the menu.
+
+  There are two separate HTML outputs. Each copy puts two versions on the
+  clipboard (static/js/index.js, lines 97–98):
+  - text/plain: whatever format the user picked in Settings. "HTML source" is
+    one of those choices; it's HTML as plain text, for pasting into a text
+    editor.
+  - text/html: always produced by renderClipboardHtml(), whatever the Settings
+    choice. Rich-text apps paste this version, and that includes another
+    Etherpad pad.
+
+  So pasting between pads always uses renderClipboardHtml(), and that's the
+  output that would have to keep the zero-width spaces.
+
+  The current structure doesn't allow that. The padding is stripped in
+  lineModel(), before any output is produced, so nothing downstream ever sees
+  it. To keep it for one output, the model would have to keep the padding
+  characters, perhaps marked as padding. Then every text format would drop them,
+  and renderClipboardHtml() alone would keep them. It's a modest change.
+
+  There are reasons to hesitate:
+  - Every rich-text app would get them too. The plugin can't tell where you'll
+    paste, so Word, Gmail, LibreOffice and the rest would all receive the
+    zero-width spaces, which is what you wanted to avoid.
+  - It may not work anyway. I haven't checked whether Etherpad keeps a
+    zero-width space when it pastes HTML, or whether ep_hyperlinked_text would
+    treat the pasted characters as its padding. That would need testing in a
+    real pad before it's worth doing.
+
+  I'd leave it as it is unless losing the padding in the destination pad turns
+  out to be a real annoyance.
+
+  Separately, a small issue in the committed code. In the dbecd97 commit, const 
+  ZWSP in formats.js (line 108) and const Z in the test file contain the
+  invisible character itself, not the '\u200B' escape I wrote. Whatever produced
+  the patch probably converted it. It behaves the same, but it looks like an
+  empty string, and someone could easily "fix" it by mistake. I'd change both
+  back to '\u200B'; I can do that if you like.
+
+✻ Sautéed for 22s · done 4:16 PM
+
+※ recap: Polishing ep_polypaste: copied link text now drops ep_hyperlinked_text's zero-width spaces, committed with passing tests, and I explained why pad-to-pad pasting loses them. Next: say whether I should restore the visible '\u200B' escape in the code. (disable recaps in /config)
+
+❯ Yes, please change that back.                                                 
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Exactly the two lines I mentioned, and no others. I'll replace the literal
+  character with the escape in both.
+
+● Bash(perl -CSD -i -pe 's/\x{200B}/\\u200B/g' static/js/formats.js
+      test/formats.test.js && grep -rn -P '\x{200B}' --include=*.js static test;
+      sed -n 108p static/js/fo…)
+  ⎿  const ZWSP = '\u200B';
+       const Z = '\u200B';
+      static/js/formats.js | 2 +-
+     … +5 lines (ctrl+o to expand)
+  ⎿  Updated static/js/formats.js (+1 -1)
+      105  // is either within or not within the hyperlink, when editing 
+           the pad
+      106  // in the browser.  But in the context of copying-and-pasting,
+            these
+      107  // extra boundary characters are not useful and we should drop
+            them.
+      108 -const ZWSP = '';                                              
+      108 +const ZWSP = '\u200B';                                        
+      109  
+      110  // Drop the zero-width space only if it isn't part of the link
+            and
+      111  // it's right next to a linked character -- any other zero-wid
+           th space
+  ⎿  Updated test/formats.test.js (+1 -1)
+      263  
+      264  // See ref:b3a7827b in ../static/js/formats.js for what this i
+           s about.
+      265  describe('link padding', () => {
+      266 -  const Z = '';                                               
+      266 +  const Z = '\u200B';                                         
+      267    const LINKED = {text: `see ${Z}site${Z} now`, spans: [[5, 9,
+            {hyperlink: 'https://x.org/'}]]};
+      268  
+      269    it('drops the zero-width spaces around a link', () => {
+
+● Both lines now use the '\u200B' escape again:
+
+  - static/js/formats.js:108: const ZWSP = '\u200B';
+  - test/formats.test.js:266: const Z = '\u200B';
+
+  Those were the only literal zero-width spaces in the plugin's JS files. All 37
+  tests still pass, and the change isn't committed.
+
+✻ Crunched for 10s · done 4:31 PM
+
+※ recap: You're fixing ep_polypaste so copied links don't carry the invisible padding characters ep_hyperlinked_text adds; the source code now spells that character as a visible escape again, with tests passing. Next, commit that small change. (disable recaps in /config)
+
+❯ When I copy-and-paste a whole pad, using Org Mode output format or plain-text 
+  output format, the zero-width spaces are still there.                         
+
+● I'll first check whether the server is running the new code, then look at the
+  pad's actual contents.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The server is running the new code, so the cause is in the pad's content. I'll
+  look at the attributes around each zero-width space in the pad's raw data.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● This pad's zero-width spaces come in pairs around links, so my current rule
+  only strips one side and misses the rest. I'll broaden it to drop an entire
+  run of consecutive zero-width spaces whenever any of them or a neighbor is
+  linked.
+
+  Read 1 file (ctrl+o to expand)
+
+❯ https://pad-sandbox.opentechstrategies.com/p/test-polypaste is the pad I'm    
+  testing with, FWIW.                                                           
+
+● That's the pad I just exported, so the analysis above is from your test pad.
+  Now the code change; I'll keep your comments' wording where it still applies.
+
+● Update(static/js/formats.js)
+  ⎿  Added 17 lines, removed 8 lines
+      107  // extra boundary characters are not useful and we should drop
+            them.
+      108  const ZWSP = '\u200B';  // '', but that may appear as the empt
+           y string
+      109  
+      110 -// Drop the zero-width space only if it isn't part of the link
+          - and                                                          
+      111 -// it's right next to a linked character -- any other zero-wid
+          -th space                                                      
+      112 -// is assumed to be one that someone entered deliberately, so 
+          -we keep                                                       
+      113 -// it.  We check the whole line, not just the selection.  If t
+          -he                                                            
+      114 -// selected text stops right next to a link, the padding chara
+          -cter at                                                       
+      115 -// the edge is still dropped.                                 
+      110 +// In practice the padding can be more than one character per 
+          +side, and                                                     
+      111 +// some of it can carry the hyperlink attribute itself (e.g., 
+          +when a                                                        
+      112 +// link is re-applied over already-padded text, a pad might en
+          +d up                                                          
+      113 +// with "a ZZlinkZZ?" where "link" and the first Z after it ar
+          +e linked).                                                    
+      114 +// So we treat each run of consecutive zero-width spaces as a 
+          +unit and                                                      
+      115 +// drop the whole run if it touches a linked character or cont
+          +ains                                                          
+      116 +// one.  Any other zero-width space is assumed to be one that 
+          +someone                                                       
+      117 +// entered deliberately, so we keep it.  We check the whole li
+          +ne, not                                                       
+      118 +// just the selection.  If the selected text stops right next 
+          +to a                                                          
+      119 +// link, the padding characters at the edge are still dropped.
+      120  const linkPadding = (text, runs) => {
+      121    const drop = new Set();
+      122    if (!text.includes(ZWSP)) return drop;
+     ...
+      124      const run = runs.find((r) => r.start <= pos && pos < r.end
+           );
+      125      return !!(run && run.attrs.hyperlink);
+      126    };
+      123 -  for (let p = text.indexOf(ZWSP); p >= 0; p = text.indexOf(ZW
+          -SP, p + 1)) {                                                 
+      124 -    if (!hrefAt(p) && (hrefAt(p - 1) || hrefAt(p + 1))) drop.a
+          -dd(p);                                                        
+      127 +  for (let p = text.indexOf(ZWSP); p >= 0; p = text.indexOf(ZW
+          +SP, p)) {                                                     
+      128 +    let end = p;                                              
+      129 +    while (text[end] === ZWSP) end++;                         
+      130 +    let linked = hrefAt(p - 1) || hrefAt(end);                
+      131 +    for (let q = p; q < end && !linked; q++) linked = hrefAt(q
+          +);                                                            
+      132 +    if (linked) for (let q = p; q < end; q++) drop.add(q);    
+      133 +    p = end;                                                  
+      134    }
+      135    return drop;
+      136  };
+
+● Update(test/formats.test.js)
+  ⎿  Added 10 lines
+      286      ]), '- site');
+      287    });
+      288  
+      289 +  it('drops runs of padding, including padding inside the link
+          +', () => {                                                    
+      290 +    // As found in a real pad: two Zs on each side, and the fi
+          +rst Z after                                                   
+      291 +    // the link text has the hyperlink attribute.             
+      292 +    const doc = makeDoc([{text: `a ${Z}${Z}link${Z}${Z}?`, spa
+          +ns: [[4, 9, {hyperlink: 'https://x.org/'}]]}]);               
+      293 +    const model = f.extractSelection(doc, ...selectAll(doc)); 
+      294 +    assert.equal(f.render('tabs', model), 'a link?');         
+      295 +    assert.equal(f.render('org', model), 'a [[https://x.org/][
+          +link]]?');                                                    
+      296 +    assert.ok(!f.renderClipboardHtml(model).includes(Z));     
+      297 +  });                                                         
+      298 +                                                              
+      299    it('keeps zero-width spaces that are not next to a link', ()
+            => {
+      300      assert.equal(renderAll('tabs', [`a${Z}b`]), `a${Z}b`);
+      301    });
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All 38 tests pass. Next I'll run the new code over the whole of your real pad,
+  as if you'd pressed Ctrl-A and copied, and count the zero-width spaces left
+  in each format's output.
+  Ran 1 shell command (ctrl+o to expand)
+
+● Every format now comes out clean on your real pad. To confirm that was the
+  bug, I'll run the same check with the committed (old) version.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Fixed, and checked against the contents of your test pad: copying the whole
+  pad now produces no zero-width spaces in any format. The server needs the
+  plugin reinstalled to pick this up, and nothing is committed.
+
+  The cause: the server was already running the previous fix, but your pad's
+  links don't follow the pattern I wrote it for. I exported the pad and looked
+  at the raw text around both links. Each has two zero-width spaces on each side
+  (Z below), and the first one after the link text is itself part of the link:
+
+  Whaddya want, a ZZlinkZZ?
+                    └───┘     ← "link" plus the Z after it are linked
+
+  The rule I wrote only dropped an unlinked zero-width space right next to a
+  linked character. That removed one per side and left two per link, which is
+  why you saw them. I'm not sure how they doubled up. It might be from linking
+  the same text twice, or from the text being copied in from another pad.
+
+  The new rule in linkPadding() in static/js/formats.js:
+  - Runs are handled as a unit. Consecutive zero-width spaces are considered
+    together.
+  - Padding is dropped. A run is removed if a character on either side of it is
+    linked, or if any character in it is linked.
+  - Other zero-width spaces are kept. One that isn't next to or part of a link
+    is still assumed to be deliberate.
+
+  I extended your comment to explain this. I added one test that uses exactly
+  the pattern from your pad, so there are 38 tests now and they all pass.
+
+  Checked against your real pad: I ran the plugin's conversion code on your
+  exported test pad as if the whole pad were copied. The committed version
+  leaves 4 zero-width spaces in every format, matching what you saw. The new
+  version leaves 0 in all ten formats and in the clipboard HTML. The Org output
+  for the two links is now:
+
+    - Whaddya want, a 
+  [[https://pad.opentechstrategies.com/p/Humanity_AI_Check-in_Meetings][link]]?
+  _AUTOMATED ELIGIBILITY REVIEW_  (OTS internal ticket: [[https://code.librehq.c
+  om/ots/clients/lfc/projects/opencalls/-/work_items/112][#112]])
+
+  That check bypassed the browser's copy step. To try it for real, reinstall the
+  plugin on the server with rm then i --path, restart Etherpad, and hard-reload
+  the pad.
+
+✻ Sautéed for 1m 23s · done 4:42 PM
+
+※ recap: You're fixing ep_polypaste so copied text no longer includes the invisible padding ep_hyperlinked_text puts around links; the uncommitted fix produced clean output from your test pad's contents. Next, reinstall the plugin, restart Etherpad, and try copying in the browser.
+
+❯ I committed it already.                                                       
+
+● I'll check the commit, since last time committing turned the \u200B escape
+  into the literal character.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Your commit 3af9fc4 looks good:
+
+  - It's all in. The working tree has no uncommitted changes to tracked files,
+    so the broader zero-width-space rule and the new test are both in the
+    commit.
+  - The escapes survived. formats.js:108 and formats.test.js:266 use '\u200B' in
+    the code. The only literal zero-width spaces are inside your comments on
+    those two lines, which looks deliberate.
+  - All 38 tests pass on the committed code.
+
+  To get it onto the sandbox server, run pnpm run plugins rm ep_polypaste, then
+  pnpm run plugins i --path with the absolute path to your checkout, restart
+  Etherpad, and hard-reload the pad.
+
+✻ Baked for 10s · done 9:31 PM
