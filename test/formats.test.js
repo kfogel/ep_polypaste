@@ -261,6 +261,53 @@ describe('html', () => {
   });
 });
 
+// See ref:b3a7827b in ../static/js/formats.js for what this is about.
+describe('link padding', () => {
+  const Z = '\u200B';  // '​', but that may appear as the empty string
+  const LINKED = {text: `see ${Z}site${Z} now`, spans: [[5, 9, {hyperlink: 'https://x.org/'}]]};
+
+  it('drops the zero-width spaces around a link', () => {
+    assert.equal(renderAll('tabs', [LINKED]), 'see site now');
+    assert.equal(renderAll('markdown', [LINKED]), 'see [site](<https://x.org/>) now');
+    const doc = makeDoc([LINKED]);
+    assert.equal(f.renderClipboardHtml(f.extractSelection(doc, ...selectAll(doc))),
+        '<p>see <a href="https://x.org/" class="hyperlink hyperlink-https%3A%2F%2Fx.org%2F">site</a> now</p>');
+  });
+
+  it('drops padding even when the selection leaves out the link', () => {
+    const doc = makeDoc([LINKED]);
+    assert.equal(f.render('tabs', f.extractSelection(doc, [0, 9], [0, 14])), ' now');
+    assert.equal(f.render('tabs', f.extractSelection(doc, [0, 0], [0, 5])), 'see ');
+  });
+
+  it('drops padding around a link at the start of a list item', () => {
+    assert.equal(renderAll('tabs-markers', [
+      {text: `${Z}site${Z}`, list: 'bullet1', spans: [[1, 5, {hyperlink: 'https://x.org/'}]]},
+    ]), '- site');
+  });
+
+  it('drops runs of padding, including padding inside the link', () => {
+    // As found in a real pad: two Zs on each side, and the first Z after
+    // the link text has the hyperlink attribute.
+    const doc = makeDoc([{text: `a ${Z}${Z}link${Z}${Z}?`, spans: [[4, 9, {hyperlink: 'https://x.org/'}]]}]);
+    const model = f.extractSelection(doc, ...selectAll(doc));
+    assert.equal(f.render('tabs', model), 'a link?');
+    assert.equal(f.render('org', model), 'a [[https://x.org/][link]]?');
+    assert.ok(!f.renderClipboardHtml(model).includes(Z));
+  });
+
+  it('keeps zero-width spaces that are not next to a link', () => {
+    assert.equal(renderAll('tabs', [`a${Z}b`]), `a${Z}b`);
+  });
+
+  it('leaves no padding in any format', () => {
+    for (const {id} of f.FORMATS) {
+      if (id === 'native') continue;
+      assert.ok(!renderAll(id, [LINKED]).includes(Z), id);
+    }
+  });
+});
+
 describe('every format', () => {
   it('handles an empty-text list item and a lone blank line', () => {
     for (const {id} of f.FORMATS) {

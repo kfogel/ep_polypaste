@@ -97,15 +97,64 @@ const attributeRuns = (aline, pool) => {
   return runs;
 };
 
-// Splits text[from, to) into formatted segments.
-const segmentsOf = (text, runs, from, to) => {
+// [ref:b3a7827b]
+// 
+// The Etherpad 'ep_hyperlinked_text' plugin puts a zero-width space
+// (ZERO WIDTH SPACE, U+200B / decimal 8203) on each side of linked
+// text, presumably to help users pick a text-insertion location that
+// is either within or not within the hyperlink, when editing the pad
+// in the browser.  But in the context of copying-and-pasting, these
+// extra boundary characters are not useful and we should drop them.
+const ZWSP = '\u200B';  // '​', but that may appear as the empty string
+
+// In practice the padding can be more than one character per side,
+// and some of it can carry the hyperlink attribute itself (e.g., when
+// a link is re-applied over already-padded text, a pad might end up
+// with "a ZZlinkZZ?", where "link" and the first Z after it are
+// linked).  So we treat each run of consecutive zero-width spaces as
+// a unit and drop the whole run if it touches a linked character or
+// contains one.  Any other zero-width space is assumed to be one that
+// someone entered deliberately, so we keep it.  And we check the
+// whole line, not just the selection: if the selected text stops
+// right next to a link, we still drop the padding at the edge.
+const linkPadding = (text, runs) => {
+  const drop = new Set();
+  if (!text.includes(ZWSP)) return drop;
+  const hrefAt = (pos) => {
+    const run = runs.find((r) => r.start <= pos && pos < r.end);
+    return !!(run && run.attrs.hyperlink);
+  };
+  for (let p = text.indexOf(ZWSP); p >= 0; p = text.indexOf(ZWSP, p)) {
+    let end = p;
+    while (text[end] === ZWSP) end++;
+    let linked = hrefAt(p - 1) || hrefAt(end);
+    for (let q = p; q < end && !linked; q++) linked = hrefAt(q);
+    if (linked) for (let q = p; q < end; q++) drop.add(q);
+    p = end;
+  }
+  return drop;
+};
+
+// Returns text[a, b) without the characters at positions in `drop`.
+const sliceWithout = (text, a, b, drop) => {
+  if (!drop.size) return text.slice(a, b);
+  let s = '';
+  for (let p = a; p < b; p++) if (!drop.has(p)) s += text[p];
+  return s;
+};
+
+// Splits text[from, to) into formatted segments, leaving out the
+// characters at positions in `drop`.
+const segmentsOf = (text, runs, from, to, drop = new Set()) => {
   const segs = [];
   for (const run of runs) {
     const a = Math.max(from, run.start);
     const b = Math.min(to, run.end, text.length);
     if (a >= b) continue;
+    const segText = sliceWithout(text, a, b, drop);
+    if (segText === '') continue;
     const seg = {
-      text: text.slice(a, b),
+      text: segText,
       b: !!run.attrs.bold,
       i: !!run.attrs.italic,
       u: !!run.attrs.underline,
@@ -124,7 +173,7 @@ const segmentsOf = (text, runs, from, to) => {
   // kept plain.
   const covered = runs.length ? runs[runs.length - 1].end : 0;
   if (to > covered && covered < text.length) {
-    segs.push({text: text.slice(Math.max(from, covered), to),
+    segs.push({text: sliceWithout(text, Math.max(from, covered), to, drop),
       b: false, i: false, u: false, s: false, href: null});
   }
   return segs;
@@ -135,7 +184,10 @@ const lineModel = (docLine, pool, from, to) => {
   const {text, aline, lineMarker} = docLine;
   const runs = attributeRuns(aline, pool);
   const lineAttrs = lineMarker && runs.length ? runs[0].attrs : {};
-  const line = {kind: 'para', segs: segmentsOf(text, runs, Math.max(from, lineMarker), to)};
+  const line = {
+    kind: 'para',
+    segs: segmentsOf(text, runs, Math.max(from, lineMarker), to, linkPadding(text, runs)),
+  };
   const list = /^([a-z]+)([0-9]+)$/.exec(lineAttrs.list || '');
   const heading = /^h([1-6])$/.exec(lineAttrs.heading || '');
   if (list) {
