@@ -38,25 +38,37 @@
 //     - bold, italic, underline, strikethrough     (core)
 //     - hyperlink = <url>                          (ep_hyperlinked_text)
 
-// The formats offered to users, in menu order.  `id` values are
-// stored in the browser, so don't change them lightly.
+// The formats offered to users, in menu order, with the usual file
+// extension for each.  `id` values are stored in the browser and
+// appear in export URLs, so don't change them lightly.
 const FORMATS = [
-  {id: 'tabs', label: 'Plain text, TAB-indented'},
-  {id: 'tabs-markers', label: 'Plain text, TAB-indented, with bullets/numbers'},
-  {id: 'org', label: 'Org Mode'},
-  {id: 'markdown', label: 'Markdown'},
-  {id: 'typst', label: 'Typst'},
-  {id: 'latex', label: 'LaTeX'},
-  {id: 'asciidoc', label: 'AsciiDoc'},
-  {id: 'rst', label: 'reStructuredText'},
-  {id: 'mediawiki', label: 'MediaWiki'},
-  {id: 'html', label: 'HTML source'},
-  {id: 'native', label: 'Browser default (no conversion)'},
+  {id: 'tabs', label: 'Plain text, TAB-indented', ext: 'txt'},
+  {id: 'tabs-markers', label: 'Plain text, TAB-indented, with bullets/numbers', ext: 'txt'},
+  {id: 'org', label: 'Org Mode', ext: 'org'},
+  {id: 'markdown', label: 'Markdown', ext: 'md'},
+  {id: 'typst', label: 'Typst', ext: 'typ'},
+  {id: 'latex', label: 'LaTeX', ext: 'tex'},
+  {id: 'asciidoc', label: 'AsciiDoc', ext: 'adoc'},
+  {id: 'rst', label: 'reStructuredText', ext: 'rst'},
+  {id: 'mediawiki', label: 'MediaWiki', ext: 'wiki'},
+  {id: 'html', label: 'HTML source', ext: 'html'},
+  {id: 'native', label: 'Browser default (no conversion)', ext: 'txt'},
 ];
 
 const DEFAULT_FORMAT = 'tabs';
 
 const isFormat = (id) => FORMATS.some((f) => f.id === id);
+
+// Returns the id of the format called `name`, which is either a
+// format's id or its file extension (if no other format uses that
+// extension), or null if there is no such format.
+const findFormat = (name) => {
+  if (isFormat(name)) return name;
+  const matches = FORMATS.filter((f) => f.ext === name);
+  return matches.length === 1 ? matches[0].id : null;
+};
+
+const extensionOf = (id) => (FORMATS.find((f) => f.id === id) || {}).ext;
 
 // ---------------------------------------------------------------------------
 // Reading the document model.
@@ -282,6 +294,23 @@ const extractSelection = (doc, selStart, selEnd) => {
   }
   numberItems(doc, sl, lines);
   return {inline, lines, trailingNewline};
+};
+
+// Builds the model of a whole document, without any blank lines at
+// the end, and ending with a newline like any text file.  Return null
+// if the document has nothing but blank lines.
+const extractDocument = (doc) => {
+  if (!doc.lineCount) return null;
+  const last = doc.lineCount - 1;
+  const model = extractSelection(doc, [0, 0], [last, doc.getLine(last).text.length]);
+  if (!model) return null;
+  while (model.lines.length && model.lines[model.lines.length - 1].kind === 'blank') {
+    model.lines.pop();
+  }
+  if (!model.lines.length) return null;
+  model.inline = false;
+  model.trailingNewline = true;
+  return model;
 };
 
 // ---------------------------------------------------------------------------
@@ -859,7 +888,10 @@ module.exports = {
   FORMATS,
   DEFAULT_FORMAT,
   isFormat,
+  findFormat,
+  extensionOf,
   extractSelection,
+  extractDocument,
   render,
   renderClipboardHtml,
   // For tests.

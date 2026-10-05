@@ -4,7 +4,8 @@
       "name": "main",
       "hooks": {
         "eejsBlock_mySettings.dropdowns": "ep_polypaste/index:eejsBlockMySettingsDropdowns",
-        "clientVars": "ep_polypaste/index"
+        "clientVars": "ep_polypaste/index",
+        "expressCreateServer": "ep_polypaste/index"
       },
       "client_hooks": {
         "postAceInit": "ep_polypaste/static/js/index"

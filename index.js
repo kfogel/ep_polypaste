@@ -16,8 +16,9 @@
 
 'use strict';
 
-// Server side: adds the format menu to the pad's Settings panel and passes
-// the site-wide default format (if any) to the client.
+// Server side: adds the format menu to the pad's Settings panel, passes
+// the site-wide default format (if any) to the client, and adds export URLs
+// for the formats.
 //
 // To set the default for users who haven't chosen a format, add this to
 // settings.json:
@@ -28,11 +29,17 @@
 // available formats.
 
 const formats = require('./static/js/formats');
+const {renderAtext} = require('./lib/atext');
+
+// Loads an Etherpad server module.
+const core = (name) => {
+  const mod = require(`ep_etherpad-lite/${name}`);
+  return (mod && mod.default) || mod;
+};
 
 const getConfig = () => {
   try {
-    const mod = require('ep_etherpad-lite/node/utils/Settings');
-    return ((mod && mod.default) || mod).ep_polypaste || {};
+    return core('node/utils/Settings').ep_polypaste || {};
   } catch (err) {
     // Never let a configuration problem keep pads from loading.
     console.error('[ep_polypaste] could not read settings; using built-in defaults', err);
@@ -56,7 +63,59 @@ exports.eejsBlockMySettingsDropdowns = (hookName, context) => {
 
 exports.clientVars = async (hookName, context) => {
   const config = getConfig();
-  const defaultFormat = formats.isFormat(config.defaultFormat)
-    ? config.defaultFormat : formats.DEFAULT_FORMAT;
+  const defaultFormat = formats.findFormat(config.defaultFormat) || formats.DEFAULT_FORMAT;
   return {ep_polypaste: {defaultFormat}};
+};
+
+// Export URLs: /p/PAD/export/ep-polypaste-FORMAT (or /p/PAD/REV/export/...)
+// downloads the pad in FORMAT, which is a format id or its file extension:
+// for instance, ep-polypaste-org, ep-polypaste-markdown, or ep-polypaste-md.
+//
+// These live alongside Etherpad's own export URLs (/p/PAD/export/txt etc.),
+// whose route passes on any type it doesn't know.  The "ep-polypaste-"
+// prefix keeps our names from colliding with any Etherpad might add later.
+const EXPORT_PREFIX = 'ep-polypaste-';
+
+const exportPad = async (req, res, next) => {
+  const {type} = req.params;
+  const format = type.startsWith(EXPORT_PREFIX) && formats.findFormat(type.slice(EXPORT_PREFIX.length));
+  // There's no point to "native" here; Etherpad's own export is /export/txt.
+  if (!format || format === 'native') return next();
+
+  // Check access, validate the revision, and find the pad the way Etherpad's
+  // own export route does.
+  if (!(await core('node/padaccess')(req, res))) return;
+  const rev = req.params.rev === undefined ? null
+    : core('node/utils/checkValidRev').checkValidRev(req.params.rev);
+  const readOnlyManager = core('node/db/ReadOnlyManager');
+  const padManager = core('node/db/PadManager');
+  let padId = req.params.pad;
+  let readOnlyId = null;
+  if (readOnlyManager.isReadOnlyId(padId)) {
+    readOnlyId = padId;
+    padId = await readOnlyManager.getPadId(readOnlyId);
+  }
+  if (!padId || !(await padManager.doesPadExist(padId))) return next();
+
+  const pad = await padManager.getPad(padId);
+  const atext = rev == null ? pad.atext : await pad.getInternalRevisionAText(rev);
+  const text = renderAtext(atext, pad.apool(), format);
+
+  const hookFileName = await core('static/js/pluginfw/hooks').aCallFirst('exportFileName', padId);
+  const fileName = hookFileName.length ? hookFileName : readOnlyId || padId;
+  res.header('Access-Control-Allow-Origin', '*');
+  res.attachment(`${fileName}.${formats.extensionOf(format)}`);
+  res.type(`${format === 'html' ? 'text/html' : 'text/plain'}; charset=utf-8`);
+  res.send(text);
+};
+
+exports.expressCreateServer = (hookName, {app}) => {
+  app.get('/p/:pad{/:rev}/export/:type', (req, res, next) => {
+    exportPad(req, res, next).catch((err) => {
+      console.error(`[ep_polypaste] could not export pad "${req.params.pad}" as ${req.params.type}`,
+          err);
+      if (res.headersSent) return next(err);
+      res.status(500).type('text/plain').send(`Failed to export pad as ${req.params.type}.`);
+    });
+  });
 };

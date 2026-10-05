@@ -1,22 +1,35 @@
-# ep_polypaste
+# ep_polypaste (Etherpad plugin) / ep-export (CLI-based export tool)
 
-Etherpad plugin to enable layout-respecting client-side
-copy-and-paste, with the user able to choose from a menu of output
-formats (e.g., plain text, Markdown, Org Mode, Typst, Asciidoc,
-reStructuredText, MediaWiki syntax, LaTeX, HTML).
+Paste or export Etherpads to your choice of format: nested plain text,
+Markdown, Org Mode, Typst, Asciidoc, reStructuredText, MediaWiki
+syntax, LaTeX, HTML.
 
-ep_polypaste is free and open source software, under the [Apache-2.0
-License](LICENSE.md).
+There are two independent but similar tools here:
 
-## What problem does this solve?
+* `ep_polypaste` is a server-side Etherpad plugin that enables
+  browsers to copy and paste while preserving the formatting +
+  nesting from the pad, with the user choosing the output (paste)
+  format;
+
+* `ep-export` is a command-line export tool that likewise respects
+  formatting + nesting, and allows choice of output format.
+
+ep_polypaste and ep-export are free and open source software, under
+the [Apache-2.0 License](LICENSE.md).
+
+A guide to the reader: most of this README explains `ep_polypaste`,
+and then toward the end it covers the very similar `ep-export`.
+
+## What problem does `ep_polypaste` solve?
 
 Copying from an Etherpad and pasting into a plain-text destination
 (such as a file, an editor buffer, or a browser `<textarea>`) normally
 just pastes the words without any of the list nesting structure --
 lists get flattened.
 
-With this plugin installed on the Etherpad server, pasting using
-Ctrl-C (or Ctrl-X, or the Copy/Cut menu items) preserves formatting.
+With this plugin installed on the Etherpad server, copying using
+Ctrl-C (or Ctrl-X, or the Copy/Cut menu items) and then pasting
+preserves formatting.
 
 It works by storing two versions of the selection on the clipboard:
 
@@ -120,6 +133,100 @@ by default.  To change this default, add this to Etherpad's
 Valid values: `tabs`, `tabs-markers`, `markdown`, `org`, `asciidoc`,
 `rst`, `mediawiki`, `latex`, `typst`, `html`, `native`.
 
+Here, in the export URLs, and in `ep-export` (both described below),
+a format can also be named by its usual file extension: `md` for
+`markdown`, `typ` for `typst`, `tex` for `latex`, `adoc` for
+`asciidoc`, and `wiki` for `mediawiki`.
+
+## Export URLs
+
+With the plugin installed, the server also offers each format for
+export at a URL similar to Etherpad's own export URLs (such as
+`/p/PAD/export/txt`):
+
+```
+  https://pad.example.org/p/meeting-notes/export/ep-polypaste-org
+  https://pad.example.org/p/meeting-notes/export/ep-polypaste-md
+  https://pad.example.org/p/meeting-notes/42/export/ep-polypaste-latex
+```
+
+(The third example above names revision 42 of the pad.)
+
+The response is a download of the whole pad (named, e.g.,
+`meeting-notes.org`), with the same access rules as Etherpad's own
+exports; read-only pad IDs work too.  Note that there is no
+`ep-polypaste-native`, since that would be the same as the
+`/export/txt` that Etherpad already offers.
+
+We use the `ep-polypaste-` prefix to keep these names from colliding
+with new export types that upstream Etherpad might add in the future.
+
+## Command-line export tool: `ep-export`
+
+This package also includes `ep-export`, a command-line tool that saves
+a whole pad locally in any of the formats above, using the same
+conversion code as the plugin:
+
+```
+  ep-export -t org https://pad.example.org/p/meeting-notes
+  ep-export -o notes.md https://pad.example.org/p/meeting-notes
+  ep-export -t md -o - https://pad.example.org/p/meeting-notes | less
+```
+
+The first command writes `meeting-notes.org` in the current directory.
+The second guesses the format from the output file's extension.  The
+third writes to stdout.  Run `ep-export --help` for all the options,
+and `ep-export --list-formats` for the formats.  Some details:
+
+* The `native` format is Etherpad's own plain-text export (the pad's
+  **Import/Export → Plain text** download), saved without conversion.
+
+* `-r N` (or a timeslider URL ending in `#N`) saves revision N of the
+  pad instead of the latest.
+
+* `ep-export` won't overwrite an existing file unless given `-f`.
+
+* For LaTeX and HTML, the output is the document body, not a complete
+  document: there's no `\documentclass` or `<html>` wrapper.
+
+* Blank lines at the end of the pad are left out.
+
+The plugin does *not* need to be installed on the Etherpad server for
+`ep-export` to work: `ep-export` downloads the pad from the same
+export URL that the pad's own **Import/Export → Etherpad** link would
+use (which gives the pad's full text with its formatting attributes)
+and does the conversion locally.  So this will works with any recent
+Etherpad server (it has been tested with Etherpad 3.3), on any pad you
+can open in a browser without logging in, or on pads behind HTTP Basic
+authentication if you include the user name and password in the URL
+(`https://user:password@pad.example.org/p/...`).  Note that it can't
+follow a login page or use a browser session, so it can't export pads
+that need those.  The server must also allow exports, of course.
+
+To install `ep-export` (Node.js 18 or later is needed):
+
+```
+  npm install -g /path/to/ep_polypaste
+```
+
+or run `/path/to/ep_polypaste/bin/ep-export` directly.
+
+### How `ep-export` differs from `etherpad-cli`
+
+The Etherpad project's
+[etherpad-cli](https://github.com/ether/etherpad-cli) (command name
+`etherpad-pp-cli`) is a general client for Etherpad's HTTP API.  It
+has dozens of commands for administering a server: creating and
+deleting pads, managing authors, groups, and sessions, reading chat
+history, and getting or setting a pad's contents as raw text or as
+HTML.  It needs an API token, which normally only the server's
+administrators have.
+
+By contrast, `ep-export` does just one thing: it saves a pad as a
+file, in a format chosen from the list above, and keeps the pad's list
+nesting, headings, and other formatting.  It needs no API token nor
+any other special access.  The pad's URL is enough.
+
 ## Development
 
 The conversion code, in `static/js/formats.js`, has no dependencies on the
@@ -130,8 +237,18 @@ browser or on Etherpad, and has unit tests:
 ```
 
 The hook for the Etherpad editor's copy and cut events is in
-`static/js/index.js`, and `index.js` is what adds the menu to the
-`Settings` panel and tells the site's default to the browser.
+`static/js/index.js`.  On the server, `index.js` adds the menu to the
+`Settings` panel, tells the site's default to the browser, and serves
+the export URLs.
+
+`lib/atext.js` adapts a whole pad, as Etherpad stores it, to the
+document interface that `formats.js` uses (the same interface the
+browser code provides for the selection).  The export URLs and
+`ep-export` both use it.
+
+The `ep-export` command is in `lib/ep-export.js`; all it adds is
+downloading the pad and handling options.  Its tests use a real
+`.etherpad` export in `test/fixtures/` and don't need a server.
 
 ## Contribution
 
@@ -141,5 +258,3 @@ Patches welcome.
 
 I built this with LLM assistance; see the 
 [session transcripts](.llm/llm-session-transcripts.txt) for details.
-
-

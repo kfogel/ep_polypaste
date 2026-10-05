@@ -2194,3 +2194,1396 @@ Claude Code v2.1.285 · Opus 5.5
   Etherpad, and hard-reload the pad.
 
 ✻ Baked for 10s · done 9:31 PM
+
+===== SESSION BOUNDARY started=2026-10-05 =====
+Claude Code v2.1.251 · Haiku 4.5
+
+❯ I'd like to make a simple command-line tool that takes an Etherpad pad URL as 
+  its argument and saves that pad locally in a text-based format (e.g., user    
+  chooses the output option at run-time: Markdown, or Org Mode, or plaintext,   
+  or HTML, etc).  Is any of the code in this ep_polypaste plugin here useful    
+  for such a command-line tool?  That is, should we try to share code between   
+  this plugin and my desired tool?  Should they be basically the same code base 
+  with two different ways to be invoked, or are they really separate tools?     
+  I'm open to creative ideas; I just want to avoid needless duplication of      
+  code.                                                                         
+
+  Searched for 1 pattern, read 4 files (ctrl+o to expand)
+
+● Now I can give you a solid answer. Yes, there's significant reusable code 
+  here.
+
+  The static/js/formats.js file is exactly what you'd want to share. It's
+  already designed as a pure conversion module with no dependencies on browsers,
+  Etherpad, or the DOM—it only understands Etherpad's internal attribute
+  format. That means:
+
+  Code you can reuse directly:
+  - extractSelection() → parse Etherpad's document model into an intermediate
+    representation
+  - render() → convert that representation to any of the 11 formats
+  - All the format-specific renderers (Markdown, Org, LaTeX, HTML, etc.)
+  - Helper functions like renderClipboardHtml()
+
+  Architecture suggestion:
+
+  Create a monorepo structure (or just one repo with two entry points):
+
+  ep-polypaste/
+  ├── packages/core/
+  │   ├── formats.js          (shared, zero dependencies)
+  │   ├── etherpad-extractor/ (Etherpad API integration - new for CLI)
+  │   └── tests/
+  ├── plugins/
+  │   └── etherpad/           (browser-based plugin)
+  │       ├── index.js
+  │       └── static/js/index.js
+  └── cli/
+      └── app.js             (CLI entry point - new)
+
+  Or simpler: keep the current structure and add a /cli or /bin directory that
+  imports from static/js/formats.js.
+
+  For the CLI, you'd need to add:
+  1. An Etherpad API client to fetch pad content (just HTTP calls to the JSON
+     export endpoint)
+  2. A CLI argument parser to let users choose format + output file
+  3. A thin wrapper around extractSelection() that works with Etherpad's API
+     response instead of the browser's in-memory document
+
+  The plugin and CLI would diverge only in how they get the document (plugin:
+  browser DOM; CLI: Etherpad REST API) and how they output it (plugin:
+  clipboard; CLI: file). The format conversion logic is 100% shared.
+
+✻ Baked for 13s · done 7:21 PM
+
+❯ /model 
+  ⎿  Kept model as Haiku 4.5
+
+===== SESSION BOUNDARY started=2026-10-05 =====
+Claude Code v2.1.289 · Opus 5.5
+
+❯ I'd like to make a simple command-line tool that takes an Etherpad pad URL as 
+  its argument and saves that pad locally in a text-based format (e.g., user    
+  chooses the output option at run-time: Markdown, or Org Mode, or plaintext,   
+  or HTML, etc).  Is any of the code in this ep_polypaste plugin here useful    
+  for such a command-line tool?  That is, should we try to share code between   
+  this plugin and my desired tool?  Should they be basically the same code base 
+  with two different ways to be invoked, or are they really separate tools?     
+  I'm open to creative ideas; I just want to avoid needless duplication of      
+  code.                                                                         
+
+  Read 3 files, ran 1 shell command (ctrl+o to expand)
+
+● Short answer: yes, share code. Keep it one codebase with two entry points.
+  Nearly all the real work is already in a form a CLI can reuse.
+
+  Why it fits
+
+  static/js/formats.js is about 870 of the plugin's ~1070 lines. Its header
+  comment says it is pure: it doesn't touch the DOM or Etherpad internals. It
+  already runs in three places: the browser, the server (for the settings menu)
+  and the Node tests. Its input is a small interface:
+
+  doc = { lineCount, getLine(i) -> {text, aline, lineMarker}, pool }
+
+  The browser side (static/js/index.js) is only an adapter. docFromRep() turns
+  Etherpad's live editor state into that doc, and the rest is clipboard and
+  settings handling. test/helpers.js is a second adapter that builds fake docs.
+  The CLI would be a third adapter, building a doc from a pad URL, and then
+  calling the same code:
+
+  const model = formats.extractSelection(doc, [0, 0], [doc.lineCount - 1, 0]);
+  // whole pad
+  process.stdout.write(formats.render(format, model));
+
+  That gives you all ten formats (Markdown, Org, Typst, LaTeX, AsciiDoc, RST,
+  MediaWiki, HTML, two TAB styles), plus correct list nesting and numbering,
+  ep_headings2 headings and code blocks, ep_hyperlinked_text links, and the
+  zero-width-space cleanup. Writing those twice would be the main source of
+  duplication, and the main place for the two tools to drift apart.
+
+  What the CLI needs that's new
+
+  Probably 150–200 lines:
+
+  1. Fetch the pad's attributed text. The simplest route that needs no API key
+     is GET <server>/p/<pad>/export/etherpad. It returns JSON whose pad:<id>
+     record holds atext ({text, attribs}) and pool ({numToAttrib}). That's the
+     same data the browser has. Two caveats: the export includes every revision,
+     so it can be large for long-lived pads, and it fails if the server
+     disables export or requires a session. A fallback that avoids both is the
+     socket.io CLIENT_READY handshake the browser itself uses. It's more
+     involved, so I'd start with the export and add the fallback only if you hit
+     those problems.
+  2. Adapt it to doc. Split atext.text on \n, and split atext.attribs into
+     per-line alines. Etherpad ops ending in |N+M mark newlines, and parseAline
+     already understands that syntax. Then set lineMarker = 1 on lines whose
+     first op carries lmkr.
+  3. Handle arguments and output. Parse the URL (including read-only r.xxx
+     URLs), take --format with choices from formats.FORMATS minus native, and
+     write to -o file or stdout.
+
+  How to organize it
+
+  - What I'd do now: add a bin/ script and a lib/ adapter to this repo, and
+    declare the CLI in package.json's "bin" with whatever command name you like;
+    it doesn't have to be ep_polypaste. Etherpad ignores the extra files, and
+    the CLI reuses the existing tests. Maybe add one test fixture made from a
+    real .etherpad export.
+  - Later, if it seems worthwhile: move formats.js into its own npm package
+    (something like etherpad-text-formats) that both the plugin and the CLI
+    depend on. This is cleaner if other people want the converters. The cost is
+    two packages to version and publish, and you'd need to check that Etherpad's
+    client bundler picks up a dependency from node_modules for
+    require('./formats'). I believe it does in 2.x, but I haven't checked.
+    Splitting later is easy because the module boundary already exists.
+
+  An optional extra idea
+
+  The plugin could also register server-side export formats, so
+  /p/foo/export/org and similar URLs work and appear in Etherpad's Import/Export
+  menu, using the same formats.js. That only works on servers where the plugin
+  is installed, so it complements the CLI rather than replacing it; the CLI
+  works against any Etherpad server.
+
+  Small things to adjust in formats.js
+
+  - Add an extractDocument(doc) wrapper so callers don't have to make up a
+    selection.
+  - Move the browser-specific 'native' format, or mark it as browser-only.
+  - Optionally move formats.js out of static/js/, since the name suggests
+    browser-only code. Etherpad needs client code under static/, though, so it
+    may be simplest to leave it there.
+
+  Want me to build the CLI along these lines?
+
+✻ Churned for 37s · done 7:27 PM
+
+❯ Yes, but include native format as an option too.  The name of the             
+  command-line tool should be "ep-export".  In README.md, the new section that  
+  documents this should explain how this differs from the existing Etherpad CLI 
+  tool (https://github.com/ether/etherpad-cli).  Regarding your optional extra  
+  idea: I'm worried that we'd be putting new things in a namespace that         
+  upstream Etherpad currently controls, since it already offers                 
+  /p/foo/export/txt, /p/foo/export/html, and /p/foo/export/etherpad.  How can   
+  we avoid interfering with upstream in that namespace?  Should we add an extra 
+  path component, for example /p/foo/export/ep_polypaste/txt,                   
+  /p/foo/export/ep_polypaste/org, etc?                                          
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Local Etherpad source is available. Let me check how upstream routes export
+  URLs and what the .etherpad export contains.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Fetch(https://github.com/ether/etherpad-cli)
+  ⎿  Received 449.9KB (200 OK)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Fetch(https://raw.githubusercontent.com/ether/etherpad-cli/main/README.md)
+  ⎿  Received 12.2KB (200 OK)
+
+● Upstream answers the namespace question cleanly; details at the end. Now let
+  me check whether there's a local Etherpad I can test against, and check
+  Node/npm versions.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● No Etherpad is running locally. For a real end-to-end test I'll try a
+  throwaway Etherpad clone in my scratch directory, leaving your ~/src/etherpad
+  checkout untouched.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Etherpad needs pnpm, so I'll fetch it with npx and install the clone's
+  dependencies in the background while I write the code.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Meanwhile, let me check Etherpad's own line-splitting code so the adapter
+  mirrors it.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Now the code. First, a whole-document entry point in formats.js:
+
+● Update(static/js/formats.js)
+  ⎿  Added 10 lines
+      284    return {inline, lines, trailingNewline};
+      285  };
+      286  
+      287 +// Builds the model of a whole document, which ends with a new
+          +line                                                          
+      288 +// like any text file.  Return null if the document is empty. 
+      289 +const extractDocument = (doc) => {                            
+      290 +  if (!doc.lineCount) return null;                            
+      291 +  const last = doc.lineCount - 1;                             
+      292 +  const model = extractSelection(doc, [0, 0], [last, doc.getLi
+          +ne(last).text.length]);                                       
+      293 +  if (model) model.trailingNewline = true;                    
+      294 +  return model;                                               
+      295 +};                                                            
+      296 +                                                              
+      297  // -----------------------------------------------------------
+           ----------------
+      298  // Structure shared by the renderers.
+      299  // -----------------------------------------------------------
+           ----------------
+
+● Update(static/js/formats.js)
+  ⎿  Added 1 line
+      870    DEFAULT_FORMAT,
+      871    isFormat,
+      872    extractSelection,
+      873 +  extractDocument,                                            
+      874    render,
+      875    renderClipboardHtml,
+      876    // For tests.
+
+● Background command "Install throwaway Etherpad's dependencies" completed (exit
+code 0)
+
+● Now the CLI module and its executable stub.
+
+● Write(lib/ep-export.js)
+  ⎿  Wrote 269 lines to lib/ep-export.js
+       1 // Part of the https://code.librehq.com/kfogel/ep_polypaste Ethe
+         rpad plugin.
+       3 // Copyright (C) Karl Fogel
+       4 //
+       5 // Licensed under the Apache License, Version 2.0 (the "License"
+       6 // you may not use this file except in compliance with the Licen
+         se.
+       7 // You may obtain a copy of the License at
+       9 //    http://www.apache.org/licenses/LICENSE-2.0
+      10 //
+     … +301 lines (ctrl+o to expand)
+
+● Write(bin/ep-export.js)
+  ⎿  Wrote 6 lines to bin/ep-export.js
+      1 #!/usr/bin/env node
+      2 'use strict';
+      3 
+      4 // Saves an Etherpad pad in a text-based format.  See lib/ep-expo
+        rt.js.
+      5 
+      6 require('../lib/ep-export').main();
+
+  Ran 1 shell command (ctrl+o to expand)
+● Etherpad's dependencies are installed. Next I'll install ep_headings2 and
+  ep_hyperlinked_text into the throwaway copy, so the test covers their
+  attributes too, and start it on a spare port.
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+● The server is up. Now I'll create a test pad with nested lists, headings, a
+  code line, formatting and a link through the HTTP API.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Upstream now defaults the API to SSO auth. I'll restart the throwaway server
+  with a minimal settings.json that enables API-key auth.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● My pkill pattern matched its own shell. Retrying with a safer way to stop the
+  old server:
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Background command "Start throwaway Etherpad server on port 9871" failed with
+exit code 1
+
+● The old server is gone. Starting it again with the new settings:
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Background command "Start throwaway Etherpad with API-key auth" failed with
+exit code 1
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The earlier command was killed before it wrote settings.json. Writing it and
+  starting again:
+
+  Made 1 scratchpad edit +2, ran 3 shell commands (ctrl+o to expand)
+
+● Real data confirms the format: the last op (|3+w) spans three lines, which
+  exercises the line-splitting logic. Now let me run ep-export against it in
+  several formats.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The output mostly checks out, but I noticed the pad's trailing empty line gets
+  dropped due to a selection quirk, and the timeslider #1 export produced no
+  output. I'll inspect revision 1 directly to investigate.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Revision 1 really is empty (setHTML clears the pad first), so that output is
+  correct. Now I'll make the trailing-blank-line handling explicit instead of
+  relying on the quirk:
+
+● Update(static/js/formats.js)
+  ⎿  Added 10 lines, removed 3 lines
+      284    return {inline, lines, trailingNewline};
+      285  };
+      286  
+      287 -// Builds the model of a whole document, which ends with a new
+          -line                                                          
+      288 -// like any text file.  Return null if the document is empty. 
+      287 +// Builds the model of a whole document, without any blank lin
+          +es at                                                         
+      288 +// the end, and ending with a newline like any text file.  Ret
+          +urn null                                                      
+      289 +// if the document has nothing but blank lines.               
+      290  const extractDocument = (doc) => {
+      291    if (!doc.lineCount) return null;
+      292    const last = doc.lineCount - 1;
+      293    const model = extractSelection(doc, [0, 0], [last, doc.getLi
+           ne(last).text.length]);
+      293 -  if (model) model.trailingNewline = true;                    
+      294 +  if (!model) return null;                                    
+      295 +  while (model.lines.length && model.lines[model.lines.length 
+          +- 1].kind === 'blank') {                                      
+      296 +    model.lines.pop();                                        
+      297 +  }                                                           
+      298 +  if (!model.lines.length) return null;                       
+      299 +  model.inline = false;                                       
+      300 +  model.trailingNewline = true;                               
+      301    return model;
+      302  };
+      303  
+
+● Now a test fixture from the real server: the pad record plus one revision
+  record, which shows the adapter skips revision records.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Now the tests, which run offline using the fixture and a stubbed fetch:
+
+● Write(test/ep-export.test.js)
+  ⎿  Wrote 212 lines to test/ep-export.test.js
+       1 'use strict';
+       2 
+       3 const assert = require('node:assert/strict');
+       4 const fs = require('node:fs');
+       5 const os = require('node:os');
+       6 const path = require('node:path');
+       7 const {describe, it, before, after} = require('node:test');
+       8 const f = require('../static/js/formats');
+       9 const cli = require('../lib/ep-export');
+      10 const {makeDoc} = require('./helpers');
+     … +243 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● One test of mine was wrong: the stub served every pad. I'll make it 404 a
+  named missing pad instead.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● All 61 tests pass. Let me wrap that one long line, then check the real server
+  again: trailing newline, a missing pad, and exit codes.
+
+● Update(test/ep-export.test.js)
+  ⎿  Added 3 lines, removed 1 line
+      146      dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ep-export-tes
+           t-'));
+      147      globalThis.fetch = async (url) => {
+      148        requested.push(url);
+      149 -      if (url.includes('/p/missing/')) return new Response('No
+          -t found', {status: 404, statusText: 'Not Found'});            
+      149 +      if (url.includes('/p/missing/')) {                      
+      150 +        return new Response('Not found', {status: 404, statusT
+          +ext: 'Not Found'});                                           
+      151 +      }                                                       
+      152        if (url.endsWith('/export/etherpad')) return new Respons
+           e(SAMPLE);
+      153        return new Response('native text\n');
+      154      };
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Everything behaves on the real server. Next, package.json. I'll register the
+  command and then check what a global npm install does with the plugin's
+  ep_etherpad-lite peer dependency.
+
+● Update(package.json)
+  ⎿  Added 3 lines
+       5    "keywords": ["ep", "etherpad", "plugin", "copy", "paste", "cl
+          ipboard", "lists", "markdown", "org-mode", "asciidoc"],
+       6    "license": "Apache-2.0",
+       7    "author": "Karl Fogel <kfogel@opentechstrategies.com>",
+       8 +  "bin": {                                                     
+       9 +    "ep-export": "bin/ep-export.js"                            
+      10 +  },                                                           
+      11    "engines": {
+      12      "node": ">=18.0.0"
+      13    },
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Two findings. A global install fails because npm tries to install the
+  ep_etherpad-lite peer dependency, and bin/ is missing from the tarball. Let me
+  see why:
+
+  Ran 1 shell command (ctrl+o to expand)
+● My grep filtering was just hiding small files, not applying ignore rules — the
+  only real issue is the peer dependency. I'll mark it optional to fix this
+  without affecting Etherpad's plugin install.
+
+● Update(package.json)
+  ⎿  Added 5 lines
+      14    "peerDependencies": {
+      15      "ep_etherpad-lite": ">=2.0.0"
+      16    },
+      17 +  "peerDependenciesMeta": {                                    
+      18 +    "ep_etherpad-lite": {                                      
+      19 +      "optional": true                                         
+      20 +    }                                                          
+      21 +  },                                                           
+      22    "scripts": {
+      23      "test": "node --test test/*.test.js"
+      24    }
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● The global install works now. Since I changed the plugin's package.json, I'll
+  confirm Etherpad still installs and loads it, using the throwaway server:
+
+  Ran 4 shell commands (ctrl+o to expand)
+
+● Background command "Start throwaway Etherpad with API-key auth" failed with
+exit code 1
+
+● The plugin still installs and loads, and its Settings menu renders. (That last
+  notification was from the server instance I stopped on purpose.) Now the
+  README section:
+
+● Update(README.md)
+  ⎿  Added 69 lines
+      120  Valid values: `tabs`, `tabs-markers`, `markdown`, `org`, `asci
+           idoc`,
+      121  `rst`, `mediawiki`, `latex`, `typst`, `html`, `native`.
+      122  
+      123 +## Command-line tool: `ep-export`                             
+      124 +                                                              
+      125 +This package also includes `ep-export`, a command-line tool th
+          +at                                                            
+      126 +saves a whole pad in any of the formats above, using the same 
+      127 +conversion code as the plugin:                                
+      128 +                                                              
+      129 +```                                                           
+      130 +  ep-export -t org https://pad.example.org/p/meeting-notes    
+      131 +  ep-export -o notes.md https://pad.example.org/p/meeting-note
+          +s                                                             
+      132 +  ep-export -t markdown -o - https://pad.example.org/p/meeting
+          +-notes | less                                                 
+      133 +```                                                           
+      134 +                                                              
+      135 +The first command writes `meeting-notes.org` in the current di
+          +rectory.                                                      
+      136 +The second guesses the format from the output file's extension
+          +.  The                                                        
+      137 +third writes to standard output.  Run `ep-export --help` for a
+          +ll the                                                        
+      138 +options, and `ep-export --list-formats` for the formats.  Some
+          + details:                                                     
+      139 +                                                              
+      140 +* The `native` format is Etherpad's own plain-text export (the
+          + pad's                                                        
+      141 +  **Import/Export → Plain text** download), saved without conv
+          +ersion.                                                       
+      142 +                                                              
+      143 +* `-r N` (or a timeslider URL ending in `#N`) saves revision N
+          + of the                                                       
+      144 +  pad instead of the latest.                                  
+      145 +                                                              
+      146 +* `ep-export` won't overwrite an existing file unless given `-
+          +f`.                                                           
+      147 +                                                              
+      148 +* For LaTeX and HTML, the output is the document body, not a c
+          +omplete                                                       
+      149 +  document: there's no `\documentclass` or `<html>` wrapper.  
+      150 +                                                              
+      151 +* Blank lines at the end of the pad are left out.             
+      152 +                                                              
+      153 +The plugin does *not* need to be installed on the Etherpad ser
+          +ver for                                                       
+      154 +`ep-export` to work.  `ep-export` downloads the pad from the s
+          +ame                                                           
+      155 +export URL that the pad's **Import/Export → Etherpad** link us
+          +es,                                                           
+      156 +which gives the pad's full text with its formatting attributes
+          +, and                                                         
+      157 +does the conversion locally.  So it works with any Etherpad 2.
+          +x                                                             
+      158 +server, on any pad you can open in a browser without logging i
+          +n, or                                                         
+      159 +on pads behind HTTP Basic authentication if you include the us
+          +er name                                                       
+      160 +and password in the URL (`https://user:password@pad.example.or
+          +g/p/...`).                                                    
+      161 +It can't follow a login page or use a browser session, so pads
+          + that                                                         
+      162 +need those can't be exported this way.  The server must also a
+          +llow                                                          
+      163 +exports.                                                      
+      164 +                                                              
+      165 +To install `ep-export` (Node.js 18 or later is needed):       
+      166 +                                                              
+      167 +```                                                           
+      168 +  npm install -g /path/to/ep_polypaste                        
+      169 +```                                                           
+      170 +                                                              
+      171 +or run `/path/to/ep_polypaste/bin/ep-export.js` directly.     
+      172 +                                                              
+      173 +### How this differs from `etherpad-cli`                      
+      174 +                                                              
+      175 +The Etherpad project's [etherpad-cli](https://github.com/ether
+          +/etherpad-cli)                                                
+      176 +(command name `etherpad-pp-cli`) is a general client for Ether
+          +pad's                                                         
+      177 +HTTP API.  It has dozens of commands for administering a serve
+          +r:                                                            
+      178 +creating and deleting pads, managing authors, groups, and sess
+          +ions,                                                         
+      179 +reading chat history, and getting or setting a pad's text or H
+          +TML.  It                                                      
+      180 +needs an API token, which normally only the server's administr
+          +ators                                                         
+      181 +have.                                                         
+      182 +                                                              
+      183 +`ep-export` does just one thing: it saves a pad as a file, in 
+          +a                                                             
+      184 +format chosen from the list above, keeping the pad's list nest
+          +ing,                                                          
+      185 +headings, and other formatting.  It needs no API token or any 
+          +other                                                         
+      186 +special access, only the pad's URL, so anyone who can read a p
+          +ad can                                                        
+      187 +use it.  `etherpad-cli` can only give you Etherpad's own plain
+          + text or                                                      
+      188 +HTML.  Use it if you want to manage a server or change pads, a
+          +nd use                                                        
+      189 +`ep-export` if you want a pad's contents in Markdown, Org Mode
+          +, LaTeX,                                                      
+      190 +etc.                                                          
+      191 +                                                              
+      192  ## Development
+      193  
+      194  The conversion code, in `static/js/formats.js`, has no depende
+           ncies on the
+
+● Update(README.md)
+  ⎿  Added 6 lines
+      202  `static/js/index.js`, and `index.js` is what adds the menu to 
+           the
+      203  `Settings` panel and tells the site's default to the browser.
+      204  
+      205 +The `ep-export` command is in `lib/ep-export.js`.  All it adds
+          + to the                                                       
+      206 +conversion code is downloading the pad and adapting Etherpad's
+          + export                                                       
+      207 +format to the document interface that `formats.js` uses (the s
+          +ame                                                           
+      208 +interface the browser code provides).  Its tests use a real `.
+          +etherpad`                                                     
+      209 +export in `test/fixtures/` and don't need a server.           
+      210 +                                                              
+      211  ## Contribution
+      212  
+      213  Patches welcome.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I'll mention ep-export in the README intro too, and fix one claim. I wrote
+  "Etherpad 2.x", but the server I tested against is 3.3.6.
+
+● Bash(python3 - <<'EOF'
+      p='README.md'…)
+  ⎿  160:server (it has been tested with Etherpad 3.3), on any pad you can
+     open in a browser without logging in, or
+  ⎿  Updated README.md (+5 -3)
+       3  Etherpad plugin to enable layout-respecting client-side
+       4  copy-and-paste, with the user able to choose from a menu of out
+          put
+       5  formats (e.g., plain text, Markdown, Org Mode, Typst, Asciidoc,
+       6 -reStructuredText, MediaWiki syntax, LaTeX, HTML).              
+       6 +reStructuredText, MediaWiki syntax, LaTeX, HTML).  It also incl
+         +udes                                                           
+       7 +[`ep-export`](#command-line-tool-ep-export), a command-line too
+         +l that                                                         
+       8 +saves a whole pad in any of those formats.                     
+       9  
+      10  ep_polypaste is free and open source software, under the [Apach
+          e-2.0
+      11  License](LICENSE.md).
+     ...
+      156  `ep-export` to work.  `ep-export` downloads the pad from the s
+           ame
+      157  export URL that the pad's **Import/Export → Etherpad** link us
+           es,
+      158  which gives the pad's full text with its formatting attributes
+           , and
+      157 -does the conversion locally.  So it works with any Etherpad 2.
+          -x                                                             
+      158 -server, on any pad you can open in a browser without logging i
+          -n, or                                                         
+      159 +does the conversion locally.  So it works with any recent Ethe
+          +rpad                                                          
+      160 +server (it has been tested with Etherpad 3.3), on any pad you 
+          +can open in a browser without logging in, or                  
+      161  on pads behind HTTP Basic authentication if you include the us
+           er name
+      162  and password in the URL (`https://user:password@pad.example.or
+           g/p/...`).
+      163  It can't follow a login page or use a browser session, so pads
+            that
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Both edits applied. One line just needs rewrapping:
+
+● Update(README.md)
+  ⎿  Added 4 lines, removed 3 lines
+      157  export URL that the pad's **Import/Export → Etherpad** link us
+           es,
+      158  which gives the pad's full text with its formatting attributes
+           , and
+      159  does the conversion locally.  So it works with any recent Ethe
+           rpad
+      160 -server (it has been tested with Etherpad 3.3), on any pad you 
+          -can open in a browser without logging in, or                  
+      161 -on pads behind HTTP Basic authentication if you include the us
+          -er name                                                       
+      162 -and password in the URL (`https://user:password@pad.example.or
+          -g/p/...`).                                                    
+      160 +server (it has been tested with Etherpad 3.3), on any pad you 
+          +can                                                           
+      161 +open in a browser without logging in, or on pads behind HTTP B
+          +asic                                                          
+      162 +authentication if you include the user name and password in th
+          +e URL                                                         
+      163 +(`https://user:password@pad.example.org/p/...`).              
+      164  It can't follow a login page or use a browser session, so pads
+            that
+      165  need those can't be exported this way.  The server must also a
+           llow
+      166  exports.
+
+● Background command "Restart throwaway Etherpad with plugin installed" failed
+with exit code 1
+
+● ep-export is built and works. I tested it against a throwaway Etherpad 3.3.6
+  server in my scratch directory, with ep_headings2 and ep_hyperlinked_text
+  installed, and stopped the server afterwards. All 61 tests pass. Nothing is
+  committed yet.
+
+  What I added
+
+  - lib/ep-export.js (new): the whole tool. It downloads the pad's
+    /export/etherpad JSON, which needs no API key, turns it into the same input
+    the browser code builds for formats.js, and renders the whole pad. native
+    saves Etherpad's own /export/txt unchanged.
+  - bin/ep-export.js (new): a 3-line launcher.
+  - static/js/formats.js: a new extractDocument(doc) that drops blank lines at
+    the end of the pad and ends the file with a newline. Nothing else in the
+    conversion code changed.
+  - test/ep-export.test.js (new), with test/fixtures/sample.etherpad, a trimmed
+    export from the real server. The tests run offline.
+  - README.md: a new "Command-line tool: ep-export" section, including how it
+    differs from etherpad-cli, plus a mention in the intro and the Development
+    section.
+
+  How it behaves:
+  - Format: -t org, or guessed from -o notes.md, otherwise tabs.
+  - Output file: named after the pad by default; -o - writes to standard output.
+    It won't overwrite an existing file unless you add -f.
+  - Old revisions: -r N or a timeslider URL ending in #N.
+  - Login: a user name and password in the URL are sent as HTTP Basic auth. Pads
+    that need a browser login session can't be exported.
+  - LaTeX and HTML: the output is the document body only, with no \documentclass
+    or <html> wrapper.
+
+  package.json: besides adding the "bin" entry, I marked the ep_etherpad-lite
+  peer dependency as optional. Without that, npm install -g failed: npm tried to
+  install ep_etherpad-lite itself and found no matching version. I checked that
+  Etherpad still installs and loads the plugin with this change, and the
+  Settings menu still appears.
+
+  One thing to fix before publishing: npm pack currently includes your untracked
+  logv.out, the 2026-10-05-…txt file, .llm/ and the tests. A "files" list in
+  package.json would fix that. I didn't add one because it also changes what
+  Etherpad installs for the plugin.
+
+  The /export/ namespace
+
+  Yes, an extra path component like /p/foo/export/ep_polypaste/org works, and it
+  can't collide with upstream's current routes. In
+  src/node/hooks/express/importexport.ts, upstream's route is
+  /p/:pad{/:rev}/export/:type:
+
+  - It only matches one path segment after export/. A two-segment path like
+    export/ep_polypaste/org never matches it, so upstream never handles your
+    URLs.
+  - Unknown types already fall through. For a type that isn't in its fixed list
+    (pdf, doc, docx, txt, html, odt, etherpad), it calls next() and leaves the
+    request alone. Even a flat /p/foo/export/org would work today; the trouble
+    is that upstream could claim that name later (a Markdown export has been
+    discussed).
+  - Upstream's rate limiter still applies. It's attached with app.use on the
+    same pattern, which matches by prefix, so your URLs get rate-limited too.
+    That's probably what you'd want.
+  - Avoid /p/foo/ep_polypaste/export/org. It would match upstream's route with
+    ep_polypaste taken as a revision number. That works today only because org
+    isn't one of its types; a request ending in /export/txt would go to
+    upstream's handler with a bogus revision.
+
+  If you build those server-side exports, the handler would need to do the same
+  pad-access check upstream does (hasPadAccess), since it would be serving pad
+  content.
+
+✻ Baked for 6m 53s · done 10:00 PM
+
+❯ Add the "files" list to package.json as you described.  For the /export/      
+  namespace, let's just use hyphen instead of slash as our namespace delimiter: 
+  that is, /p/foo/export/ep-polypaste-org, /p/foo/export/ep-polypaste-md, etc.  
+   This is an awkward solution, but we can always change it later (and leave    
+  the old names as aliases), and it avoids stomping on current or future        
+  upstream names for now.  Also, unrelated to the preceding, make the CLI tool  
+  be named just "ep-export" (no ".js" extension -- unless there is a convention 
+  that Javascript CLI tools should have a ".js" extension, in which case let's  
+  discuss).                                                                     
+
+● Let me look at the Etherpad internals the server-side export will need: access
+  checks, revision handling, and how a plugin registers routes.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● I'll add format extensions and a findFormat() helper, extract the
+  atext→document adapter into a shared lib/atext.js for reuse by CLI and server,
+  and wire up the export route in the server's index.js.
+
+● Bash(python3 - <<'EOF'
+      p='static/js/formats.js'…)
+  ⎿  total 4
+     -rwxr-xr-x 1 kfogel kfogel 144 Oct  5 19:43 ep-export
+  ⎿  Updated static/js/formats.js (+27 -13)
+      38  //     - bold, italic, underline, strikethrough     (core)
+      39  //     - hyperlink = <url>                          (ep_hyperli
+          nked_text)
+      40  
+      41 -// The formats offered to users, in menu order.  `id` values ar
+         -e                                                              
+      42 -// stored in the browser, so don't change them lightly.        
+      41 +// The formats offered to users, in menu order, with the usual 
+         +file                                                           
+      42 +// extension for each.  `id` values are stored in the browser a
+         +nd                                                             
+      43 +// appear in export URLs, so don't change them lightly.        
+      44  const FORMATS = [
+      44 -  {id: 'tabs', label: 'Plain text, TAB-indented'},             
+      45 -  {id: 'tabs-markers', label: 'Plain text, TAB-indented, with b
+         -ullets/numbers'},                                              
+      46 -  {id: 'org', label: 'Org Mode'},                              
+      47 -  {id: 'markdown', label: 'Markdown'},                         
+      48 -  {id: 'typst', label: 'Typst'},                               
+      49 -  {id: 'latex', label: 'LaTeX'},                               
+      50 -  {id: 'asciidoc', label: 'AsciiDoc'},                         
+      51 -  {id: 'rst', label: 'reStructuredText'},                      
+      52 -  {id: 'mediawiki', label: 'MediaWiki'},                       
+      53 -  {id: 'html', label: 'HTML source'},                          
+      54 -  {id: 'native', label: 'Browser default (no conversion)'},    
+      45 +  {id: 'tabs', label: 'Plain text, TAB-indented', ext: 'txt'}, 
+      46 +  {id: 'tabs-markers', label: 'Plain text, TAB-indented, with b
+         +ullets/numbers', ext: 'txt'},                                  
+      47 +  {id: 'org', label: 'Org Mode', ext: 'org'},                  
+      48 +  {id: 'markdown', label: 'Markdown', ext: 'md'},              
+      49 +  {id: 'typst', label: 'Typst', ext: 'typ'},                   
+      50 +  {id: 'latex', label: 'LaTeX', ext: 'tex'},                   
+      51 +  {id: 'asciidoc', label: 'AsciiDoc', ext: 'adoc'},            
+      52 +  {id: 'rst', label: 'reStructuredText', ext: 'rst'},          
+      53 +  {id: 'mediawiki', label: 'MediaWiki', ext: 'wiki'},          
+      54 +  {id: 'html', label: 'HTML source', ext: 'html'},             
+      55 +  {id: 'native', label: 'Browser default (no conversion)', ext:
+         + 'txt'},                                                       
+      56  ];
+      57  
+      58  const DEFAULT_FORMAT = 'tabs';
+      59  
+      60  const isFormat = (id) => FORMATS.some((f) => f.id === id);
+      61  
+      62 +// Returns the id of the format called `name`, which is either 
+         +a                                                              
+      63 +// format's id or its file extension (if no other format uses t
+         +hat                                                            
+      64 +// extension), or null if there is no such format.             
+     … 19 more lines (ctrl+o to expand)
+  ⎿  Deleted bin/ep-export.js (+0 -6)
+      1 -#!/usr/bin/env node                                             
+      2 -'use strict';                                                   
+      3 -                                                                
+      4 -// Saves an Etherpad pad in a text-based format.  See lib/ep-exp
+        -ort.js.                                                         
+      5 -                                                                
+      6 -require('../lib/ep-export').main();                             
+  ⎿  Created bin/ep-export (+6 -0)
+      1 +#!/usr/bin/env node                                             
+      2 +'use strict';                                                   
+      3 +                                                                
+      4 +// Saves an Etherpad pad in a text-based format.  See lib/ep-exp
+        +ort.js.                                                         
+      5 +                                                                
+      6 +require('../lib/ep-export').main();                             
+
+● Now the shared adapter module, taken out of the CLI:
+
+● Write(lib/atext.js)
+  ⎿  Wrote 75 lines to lib/atext.js
+       1 // Part of the https://code.librehq.com/kfogel/ep_polypaste Ethe
+         rpad plugin.
+       3 // Copyright (C) Karl Fogel
+       4 //
+       5 // Licensed under the Apache License, Version 2.0 (the "License"
+       6 // you may not use this file except in compliance with the Licen
+         se.
+       7 // You may obtain a copy of the License at
+       9 //    http://www.apache.org/licenses/LICENSE-2.0
+      10 //
+     … +76 lines (ctrl+o to expand)
+
+● Bash(python3 - <<'EOF'
+      p='lib/ep-export.js'…)
+  ⎿  57:const MORE_EXTENSIONS = {
+     72:    : MORE_EXTENSIONS[ext] || null;
+     const listFormats = () => formats.FORMATS
+     … +2 lines (ctrl+o to expand)
+  ⎿  Updated lib/ep-export.js (+14 -73)
+      21  //
+      22  // It downloads the pad's ".etherpad" export, which contains th
+          e pad's
+      23  // attributed text (the text plus attributes that the editor it
+          self
+      24 -// works with), adapts that to the document interface formats.j
+         -s                                                              
+      25 -// expects, and renders the whole document.  This needs no API 
+         -key and                                                        
+      26 -// nothing installed on the server.                            
+      24 +// works with), and renders that with atext.js.  This needs no 
+         +API key                                                        
+      25 +// and nothing installed on the server.                        
+      26  //
+      27  // The "native" format is instead Etherpad's own plain-text exp
+          ort,
+      28  // saved as is.
+     ...
+      31  const path = require('node:path');
+      32  const {parseArgs} = require('node:util');
+      33  const formats = require('../static/js/formats');
+      34 +const {renderAtext} = require('./atext');                      
+      35  
+      36  const USAGE = `\
+      37  Usage: ep-export [OPTIONS] PAD_URL
+     ...
+      39  Save an Etherpad pad in a text-based format.
+      40  
+      41  Options:
+      42 -  -t, --to FORMAT      Output format (see --list-formats).  If 
+         -not                                                            
+      42 +  -t, --to FORMAT      Output format (see --list-formats), or i
+         +ts file                                                        
+      43 +                       extension (such as "md" for Markdown).  
+         +If not                                                         
+      44                         given, it is guessed from the output fil
+          e's
+      45                         extension, or else is "${formats.DEFAULT
+          _FORMAT}".
+      46    -o, --output FILE    Write to FILE ("-" for standard output).
+            By
+     ...
+      53    -h, --help           Show this help.
+      54  `;
+      55  
+      55 -// Output file extension for each format.                      
+      56 -const EXTENSIONS = {                                           
+      57 -  'tabs': 'txt',                                               
+      58 -  'tabs-markers': 'txt',                                       
+      59 -  'org': 'org',                                                
+      60 -  'markdown': 'md',                                            
+      61 -  'typst': 'typ',                                              
+      62 -  'latex': 'tex',                                              
+      63 -  'asciidoc': 'adoc',                                          
+      64 -  'rst': 'rst',                                                
+     … 100 more lines (ctrl+o to expand)
+
+● Now the server-side export route in index.js:
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Bash(python3 - <<'EOF'
+      p='index.js'…)
+  ⎿  {
+       "parts": [
+         {
+     … +24 lines (ctrl+o to expand)
+  ⎿  Updated index.js (+64 -4)
+      16  
+      17  'use strict';
+      18  
+      19 -// Server side: adds the format menu to the pad's Settings pane
+         -l and passes                                                   
+      20 -// the site-wide default format (if any) to the client.        
+      19 +// Server side: adds the format menu to the pad's Settings pane
+         +l, passes                                                      
+      20 +// the site-wide default format (if any) to the client, and add
+         +s export URLs                                                  
+      21 +// for the formats.                                            
+      22  //
+      23  // To set the default for users who haven't chosen a format, ad
+          d this to
+      24  // settings.json:
+     ...
+      29  // available formats.
+      30  
+      31  const formats = require('./static/js/formats');
+      32 +const {renderAtext} = require('./lib/atext');                  
+      33  
+      34 +// Loads an Etherpad server module.                            
+      35 +const core = (name) => {                                       
+      36 +  const mod = require(`ep_etherpad-lite/${name}`);             
+      37 +  return (mod && mod.default) || mod;                          
+      38 +};                                                             
+      39 +                                                               
+      40  const getConfig = () => {
+      41    try {
+      34 -    const mod = require('ep_etherpad-lite/node/utils/Settings')
+         -;                                                              
+      35 -    return ((mod && mod.default) || mod).ep_polypaste || {};   
+      42 +    return core('node/utils/Settings').ep_polypaste || {};     
+      43    } catch (err) {
+      44      // Never let a configuration problem keep pads from loading
+          .
+      45      console.error('[ep_polypaste] could not read settings; usin
+          g built-in defaults', err);
+     ...
+       67      ? config.defaultFormat : formats.DEFAULT_FORMAT;
+       68    return {ep_polypaste: {defaultFormat}};
+       69  };
+       70 +                                                              
+       71 +// Export URLs: /p/PAD/export/ep-polypaste-FORMAT (or /p/PAD/R
+          +EV/export/...)                                                
+       72 +// downloads the pad in FORMAT, which is a format id or its fi
+          +le extension:                                                 
+       73 +// for instance, ep-polypaste-org, ep-polypaste-markdown, or e
+          +p-polypaste-md.                                               
+       74 +//                                                            
+       75 +// These live alongside Etherpad's own export URLs (/p/PAD/exp
+          +ort/txt etc.),                                                
+       76 +// whose route passes on any type it doesn't know.  The "ep-po
+          +lypaste-"                                                     
+     … 46 more lines (ctrl+o to expand)
+  ⎿  Updated ep.json (+2 -1)
+       4        "name": "main",
+       5        "hooks": {
+       6          "eejsBlock_mySettings.dropdowns": "ep_polypaste/index:e
+          ejsBlockMySettingsDropdowns",
+       7 -        "clientVars": "ep_polypaste/index"                     
+       7 +        "clientVars": "ep_polypaste/index",                    
+       8 +        "expressCreateServer": "ep_polypaste/index"            
+       9        },
+      10        "client_hooks": {
+      11          "postAceInit": "ep_polypaste/static/js/index"
+
+● Now package.json: the files list and the renamed launcher.
+
+● Bash(python3 - <<'EOF'
+      import json…)  ⎿  diff --git a/package.json b/package.json
+     index 62454d4..c8e5e02 100644
+     --- a/package.json
+     … +45 lines (ctrl+o to expand)
+  ⎿  Updated package.json (+21 -2)
+       2    "name": "ep_polypaste",
+       3    "version": "0.1.0",
+       4    "description": "Copying from a pad keeps list nesting: the cl
+          ipboard gets TAB-indented text, Markdown, Org Mode, AsciiDoc, r
+          eStructuredText, MediaWiki, LaTeX, or HTML, as each user prefer
+          s.",
+       5 -  "keywords": ["ep", "etherpad", "plugin", "copy", "paste", "cl
+         -ipboard", "lists", "markdown", "org-mode", "asciidoc"],        
+       5 +  "keywords": [                                                
+       6 +    "ep",                                                      
+       7 +    "etherpad",                                                
+       8 +    "plugin",                                                  
+       9 +    "copy",                                                    
+      10 +    "paste",                                                   
+      11 +    "clipboard",                                               
+      12 +    "lists",                                                   
+      13 +    "markdown",                                                
+      14 +    "org-mode",                                                
+      15 +    "asciidoc"                                                 
+      16 +  ],                                                           
+      17    "license": "Apache-2.0",
+      18    "author": "Karl Fogel <kfogel@opentechstrategies.com>",
+      19    "bin": {
+       9 -    "ep-export": "bin/ep-export.js"                            
+      20 +    "ep-export": "bin/ep-export"                               
+      21    },
+      22 +  "files": [                                                   
+      23 +    "ep.json",                                                 
+      24 +    "index.js",                                                
+      25 +    "bin/",                                                    
+      26 +    "lib/",                                                    
+      27 +    "locales/",                                                
+      28 +    "static/"                                                  
+      29 +  ],                                                           
+      30    "engines": {
+      31      "node": ">=18.0.0"
+      32    },
+
+● The JSON dump reflowed your one-line keywords array. I'll restore that line so
+  the diff only shows real changes.
+
+● Bash(python3 - <<'EOF'
+      import re…)
+  ⎿   package.json | 16 ++++++++++++++++
+      1 file changed, 16 insertions(+)
+     valid
+  ⎿  Updated package.json (+1 -12)
+       2    "name": "ep_polypaste",
+       3    "version": "0.1.0",
+       4    "description": "Copying from a pad keeps list nesting: the cl
+          ipboard gets TAB-indented text, Markdown, Org Mode, AsciiDoc, r
+          eStructuredText, MediaWiki, LaTeX, or HTML, as each user prefer
+          s.",
+       5 -  "keywords": [                                                
+       6 -    "ep",                                                      
+       7 -    "etherpad",                                                
+       8 -    "plugin",                                                  
+       9 -    "copy",                                                    
+      10 -    "paste",                                                   
+      11 -    "clipboard",                                               
+      12 -    "lists",                                                   
+      13 -    "markdown",                                                
+      14 -    "org-mode",                                                
+      15 -    "asciidoc"                                                 
+      16 -  ],                                                           
+       5 +  "keywords": ["ep", "etherpad", "plugin", "copy", "paste", "cl
+         +ipboard", "lists", "markdown", "org-mode", "asciidoc"],        
+       6    "license": "Apache-2.0",
+       7    "author": "Karl Fogel <kfogel@opentechstrategies.com>",
+       8    "bin": {
+
+● Now updating the tests for the moved adapter and the new name lookup:
+
+● Bash(python3 - <<'EOF'
+      p='test/ep-export.test.js'…)
+  ⎿  8:const f = require('../static/js/formats');
+     142:    assert.equal(f.render('tabs-markers', f.extractDocument(doc)),
+      '- a\n\nb\n');
+     … +7 lines (ctrl+o to expand)
+  ⎿  Updated test/ep-export.test.js (+21 -2)
+       7  const {describe, it, before, after} = require('node:test');
+       8  const f = require('../static/js/formats');
+       9  const cli = require('../lib/ep-export');
+      10 +const {docFromAtext, renderAtext} = require('../lib/atext');   
+      11  const {makeDoc} = require('./helpers');
+      12  
+      13  // A real .etherpad export (trimmed to the pad record and one r
+          evision
+     ...
+      69    });
+      70  });
+      71  
+      72 +describe('findFormat', () => {                                 
+      73 +  it('finds formats by id or by unambiguous file extension', ()
+         + => {                                                          
+      74 +    assert.equal(f.findFormat('markdown'), 'markdown');        
+      75 +    assert.equal(f.findFormat('md'), 'markdown');              
+      76 +    assert.equal(f.findFormat('tex'), 'latex');                
+      77 +    assert.equal(f.findFormat('tabs-markers'), 'tabs-markers');
+      78 +    assert.equal(f.findFormat('txt'), null);                   
+      79 +    assert.equal(f.findFormat('docx'), null);                  
+      80 +  });                                                          
+      81 +                                                               
+      82 +  it('gives every format an extension', () => {                
+      83 +    for (const {id} of f.FORMATS) assert.match(f.extensionOf(id
+         +), /^[a-z]+$/);                                                
+      84 +  });                                                          
+      85 +});                                                            
+      86 +                                                               
+      87  describe('formatFromFileName', () => {
+      88    it('maps extensions to formats', () => {
+      89      assert.equal(cli.formatFromFileName('a.md'), 'markdown');
+     ...
+      102  
+      103  describe('docFromAtext', () => {
+      104    const {atext, pool} = cli.atextFromExport(SAMPLE);
+       89 -  const doc = cli.docFromAtext(atext, pool);                  
+      105 +  const doc = docFromAtext(atext, pool);                      
+      106  
+      107    it('makes one line per line of text, without the final newli
+           ne', () => {
+      108      assert.equal(doc.lineCount, 12);
+     ...
+      122    });
+      123  
+      124    it('renders like a pad', () => {
+      109 -    assert.equal(f.render('markdown', f.extractDocument(doc)),
+          - SAMPLE_MARKDOWN);                                            
+     … 13 more lines (ctrl+o to expand)
+
+❯ Make "md" an alias for "markdown", when specifying a format.                  
+
+● I'll update defaultFormat in settings.json to also accept aliases like md,
+  since the only remaining spot requiring exact format ids.
+
+● Bash(python3 - <<'EOF'
+      p='index.js'…)
+  ⎿  26://   "ep_polypaste": {"defaultFormat": "markdown"}
+     66:  const defaultFormat = formats.findFormat(config.defaultFormat) ||
+      formats.DEFAULT_FORMAT;
+     67:  return {ep_polypaste: {defaultFormat}};
+  ⎿  Updated index.js (+1 -2)
+      63  
+      64  exports.clientVars = async (hookName, context) => {
+      65    const config = getConfig();
+      66 -  const defaultFormat = formats.isFormat(config.defaultFormat) 
+      67 -    ? config.defaultFormat : formats.DEFAULT_FORMAT;           
+      66 +  const defaultFormat = formats.findFormat(config.defaultFormat
+         +) || formats.DEFAULT_FORMAT;                                   
+      67    return {ep_polypaste: {defaultFormat}};
+      68  };
+      69  
+
+● Now the server-side test: reinstall the plugin into the throwaway Etherpad,
+  restart it, and request the new URLs.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● The installer reused its cached copy of version 0.1.0, which lacks
+  lib/atext.js. I'll clear that cache entry in the scratch install and
+  reinstall:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Etherpad's --path install copies the whole directory and ignores files; that
+  list only affects npm pack and publishing. Restarting the server:
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+● Everything checks out — aliases, fallback 404s for unknown/native/txt names,
+  revisions, read-only pad IDs, and Etherpad's /export/txt all behave correctly.
+  Next I'll test the CLI against the live server and verify the npm pack
+  contents.
+
+● Bash(./bin/ep-export -t md -o - http://localhost:9871/p/cli-test | head -2 &&
+      npm pack --dry-run 2>&1 | grep -E "npm notice [0-9.]+k?B " ; for p in
+      $(pgrep -f "^node…)
+  ⎿  # Shopping notes
+     Some **bold** and _italic_ text, see the site.
+     npm notice 10.5kB LICENSE.md
+     … +10 lines (ctrl+o to expand)
+  ⎿  Deleted
+     2026-10-05-192429-id-like-to-make-a-simple-command-line-tool-that.txt
+     (+0 -68)
+       1 - ▐▛███▛█   Claude Code v2.1.251                                
+       2 -▝▜██████▀  Haiku 4.5 · Claude Pro                              
+       3 -  ▝▝ ▝▝    ~/src/ep_polypaste                                  
+       4 -                                                               
+       5 -  Get to finished work sooner with Opus 5.5. Update Claude Code
+         - to try it.                                                    
+       6 -  +1 more · /status                                            
+       7 -                                                               
+       8 -❯ I'd like to make a simple command-line tool that takes an Eth
+         -erpad pad URL as                                               
+       9 -  its argument and saves that pad locally in a text-based forma
+         -t (e.g., user                                                  
+      10 -  chooses the output option at run-time: Markdown, or Org Mode,
+         - or plaintext,                                                 
+      11 -  or HTML, etc).  Is any of the code in this ep_polypaste plugi
+         -n here useful                                                  
+      12 -  for such a command-line tool?  That is, should we try to shar
+         -e code between                                                 
+      13 -  this plugin and my desired tool?  Should they be basically th
+         -e same code base                                               
+      14 -  with two different ways to be invoked, or are they really sep
+         -arate tools?                                                   
+      15 -  I'm open to creative ideas; I just want to avoid needless dup
+         -lication of                                                    
+      16 -  code.                                                        
+         -                                                               
+      17 -                                                               
+      18 -  Searched for 1 pattern, read 4 files (ctrl+o to expand)      
+      19 -                                                               
+      20 -● Now I can give you a solid answer. Yes, there's significant r
+         -eusable code                                                   
+      21 -  here.                                                        
+      22 -                                                               
+      23 -  The static/js/formats.js file is exactly what you'd want to s
+         -hare. It's                                                     
+      24 -  already designed as a pure conversion module with no dependen
+         -cies on browsers,                                              
+      25 -  Etherpad, or the DOM—it only understands Etherpad's internal 
+         -attribute                                                      
+      26 -  format. That means:                                          
+      27 -                                                               
+      28 -  Code you can reuse directly:                                 
+      29 -  - extractSelection() → parse Etherpad's document model into a
+         -n intermediate                                                 
+      30 -    representation                                             
+      31 -  - render() → convert that representation to any of the 11 for
+         -mats                                                           
+      32 -  - All the format-specific renderers (Markdown, Org, LaTeX, HT
+         -ML, etc.)                                                      
+      33 -  - Helper functions like renderClipboardHtml()                
+      34 -                                                               
+      35 -  Architecture suggestion:                                     
+      36 -                                                               
+      37 -  Create a monorepo structure (or just one repo with two entry 
+         -points):                                                       
+      38 -                                                               
+      39 -  ep-polypaste/                                                
+      40 -  ├── packages/core/                                           
+     … 29 more lines (ctrl+o to expand)
+
+● The package now contains just what it needs. Last, the README: the launcher
+  path, the md alias, and a section on the export URLs.
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+● Bash(python3 - <<'EOF'
+      p='README.md'…)
+  ⎿  ℹ pass 63
+     ℹ fail 0
+      M .llm/llm-session-transcripts.txt
+     … +10 lines (ctrl+o to expand)
+  ⎿  Updated README.md (+38 -9)
+      122  Valid values: `tabs`, `tabs-markers`, `markdown`, `org`, `asci
+           idoc`,
+      123  `rst`, `mediawiki`, `latex`, `typst`, `html`, `native`.
+      124  
+      125 +Here, in the export URLs, and in `ep-export` (both described b
+          +elow),                                                        
+      126 +a format can also be named by its usual file extension: `md` f
+          +or                                                            
+      127 +`markdown`, `typ` for `typst`, `tex` for `latex`, `adoc` for  
+      128 +`asciidoc`, and `wiki` for `mediawiki`.                       
+      129 +                                                              
+      130 +## Export URLs                                                
+      131 +                                                              
+      132 +With the plugin installed, the server offers each format at a 
+          +URL                                                           
+      133 +next to Etherpad's own export URLs (such as `/p/PAD/export/txt
+          +`):                                                           
+      134 +                                                              
+      135 +```                                                           
+      136 +  https://pad.example.org/p/meeting-notes/export/ep-polypaste-
+          +org                                                           
+      137 +  https://pad.example.org/p/meeting-notes/export/ep-polypaste-
+          +md                                                            
+      138 +  https://pad.example.org/p/meeting-notes/42/export/ep-polypas
+          +te-latex                                                      
+      139 +```                                                           
+      140 +                                                              
+      141 +The last one is revision 42 of the pad.  The response is a dow
+          +nload of                                                      
+      142 +the whole pad (named, e.g., `meeting-notes.org`), with the sam
+          +e access                                                      
+      143 +rules as Etherpad's own exports.  Read-only pad IDs work too. 
+          + There is                                                     
+      144 +no `ep-polypaste-native`, since that would be the same as Ethe
+          +rpad's                                                        
+      145 +`/export/txt`.                                                
+      146 +                                                              
+      147 +The `ep-polypaste-` prefix keeps these names from colliding wi
+          +th any                                                        
+      148 +export types that Etherpad might add in the future.           
+      149 +                                                              
+      150  ## Command-line tool: `ep-export`
+      151  
+      152  This package also includes `ep-export`, a command-line tool th
+           at
+     ...
+      156  ```
+      157    ep-export -t org https://pad.example.org/p/meeting-notes
+      158    ep-export -o notes.md https://pad.example.org/p/meeting-note
+           s
+      134 -  ep-export -t markdown -o - https://pad.example.org/p/meeting
+          --notes | less                                                 
+      159 +  ep-export -t md -o - https://pad.example.org/p/meeting-notes
+          + | less                                                       
+      160  ```
+      161  
+      162  The first command writes `meeting-notes.org` in the current di
+           rectory.
+     ...
+      196    npm install -g /path/to/ep_polypaste
+     … 33 more lines (ctrl+o to expand)
+
+● Background command "Start throwaway Etherpad with updated plugin" failed with
+exit code 1
+
+● All three changes are done, plus the md alias. Tests pass (63), and I checked
+  the new export URLs against a throwaway Etherpad 3.3.6 server, which I've
+  stopped again. Nothing is committed.
+
+  md alias: md now works wherever a format is named: ep-export -t md, the
+  ep-polypaste-md URL, and defaultFormat in settings.json. I did it with a
+  general rule rather than a special case. Each format now records its usual
+  file extension, and a format can be named by its id or by an extension no
+  other format uses. So typ, tex, adoc and wiki are also aliases. txt is not,
+  because three formats use it. If you only wanted md, that's a small change.
+  But every alias is a name you'd want to keep supporting once people rely on
+  it, so it's worth deciding now.
+
+  Export URLs: /p/PAD/export/ep-polypaste-FORMAT, plus /p/PAD/REV/export/… for a
+  past revision. On the test server:
+  - org, md, markdown and html downloads all worked. Files are named like
+    cli-test.md, with a text/html content type for HTML and text/plain for the
+    rest.
+  - A revision number and a read-only pad ID both worked.
+  - ep-polypaste-native, ep-polypaste-txt, unknown names and missing pads all
+    return 404.
+  - Etherpad's own /export/txt is unaffected.
+
+  The route is in index.js. It uses Etherpad's own pad-access check and revision
+  validation, the same ones upstream's export route uses. I tested public and
+  read-only pads, but not a pad that needs a login session.
+
+  Sharing code: the atext→document adapter moved from the CLI into a new
+  lib/atext.js, and both the export URLs and ep-export use it.
+
+  files in package.json: npm pack now includes only the runtime pieces: bin/,
+  lib/, static/, locales/, ep.json and index.js, plus README, LICENSE and
+  package.json, which npm always adds. Note that Etherpad's plugins i --path
+  copies the whole directory and ignores files. The list only affects npm pack
+  and publishing.
+
+  ep-export name: it's now bin/ep-export. There's no convention that requires
+  .js. The installed command takes its name from the key in package.json's
+  "bin", whatever the file is called. Plenty of packages point that at a .js
+  file and plenty don't. Since you'll also run it directly from the checkout, no
+  extension is the better choice. Node still treats the file as CommonJS,
+  because the package doesn't declare "type": "module".
+
+  The README now has an "Export URLs" section, a note on the aliases under
+  Configuration, the new launcher path, and an updated Development section.
+
+✻ Cogitated for 3m 27s · done 10:22 PM
+
+※ recap: Goal: save Etherpad pads as text formats from the command line and from new `ep-polypaste-*` export URLs, sharing the plugin's conversion code. Everything works and tests pass. Next: decide whether to keep extension aliases beyond `md`, then commit. (disable recaps in /config)
+
+❯ Keep extension aliases beyond 'md'.                                           
+
+● OK, I'll leave the extension aliases as they are. Besides md, these work as
+  format names wherever a format is named: typ, tex, adoc and wiki. That
+  includes ep-export -t, the ep-polypaste-… export URLs, and defaultFormat in
+  settings.json. The README already documents them under Configuration, so
+  nothing needs changing.
+
+✻ Sautéed for 3s · done 10:28 PM

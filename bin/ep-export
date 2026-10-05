@@ -1,0 +1,6 @@
+#!/usr/bin/env node
+'use strict';
+
+// Saves an Etherpad pad in a text-based format.  See lib/ep-export.js.
+
+require('../lib/ep-export').main();

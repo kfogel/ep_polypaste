@@ -1,0 +1,73 @@
+{
+  "pad:cli-test": {
+    "atext": {
+      "text": "*Shopping notes\nSome bold and italic text, see the site.\n*Fruit\n*apple\n*step one\n*step two\n*pear\n*Veg\n*Code\n*let x = 1;\nDone_ with *stars*.\n\n",
+      "attribs": "*0*3*2*1+1*0|1+f*0+5*0*4+4*0+5*0*5+6*0|1+l*0*2*6*1+1*0|1+6*0*2*7*1+1*0|1+6*0*2*8*1*9+1*0|1+9*0*2*8*1*9+1*0|1+9*0*2*7*1*9+1*0|1+5*0*2*6*1*a+1*0|1+4*0*b*2*1+1*0|1+5*0*c*2*1+1*0|3+w"
+    },
+    "pool": {
+      "numToAttrib": {
+        "0": [
+          "author",
+          "a.etherpad-system"
+        ],
+        "1": [
+          "lmkr",
+          "1"
+        ],
+        "2": [
+          "insertorder",
+          "first"
+        ],
+        "3": [
+          "heading",
+          "h1"
+        ],
+        "4": [
+          "bold",
+          "true"
+        ],
+        "5": [
+          "italic",
+          "true"
+        ],
+        "6": [
+          "list",
+          "bullet1"
+        ],
+        "7": [
+          "list",
+          "bullet2"
+        ],
+        "8": [
+          "list",
+          "number3"
+        ],
+        "9": [
+          "start",
+          "1"
+        ],
+        "10": [
+          "start",
+          "2"
+        ],
+        "11": [
+          "heading",
+          "h2"
+        ],
+        "12": [
+          "heading",
+          "code"
+        ]
+      },
+      "nextNum": 13
+    },
+    "head": 2
+  },
+  "pad:cli-test:revs:2": {
+    "changeset": "Z:1>3w*0*3*2*1+1*0|1+f*0+5*0*4+4*0+5*0*5+6*0|1+l*0*2*6*1+1*0|1+6*0*2*7*1+1*0|1+6*0*2*8*1*9+1*0|1+9*0*2*8*1*9+1*0|1+9*0*2*7*1*9+1*0|1+5*0*2*6*1*a+1*0|1+4*0*b*2*1+1*0|1+5*0*c*2*1+1*0|2+v$*Shopping notes\nSome bold and italic text, see the site.\n*Fruit\n*apple\n*step one\n*step two\n*pear\n*Veg\n*Code\n*let x = 1;\nDone_ with *stars*.\n",
+    "meta": {
+      "author": "a.etherpad-system",
+      "timestamp": 1791229997157
+    }
+  }
+}
