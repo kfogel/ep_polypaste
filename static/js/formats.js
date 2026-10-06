@@ -1,4 +1,4 @@
-// Part of the https://code.librehq.com/kfogel/ep_polypaste Etherpad plugin.
+// This file is part of https://code.librehq.com/kfogel/ep_polypaste.
 //
 // Copyright (C) Karl Fogel
 //     
