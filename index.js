@@ -51,7 +51,7 @@ const escapeHtml = (s) => String(s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 exports.eejsBlockMySettingsDropdowns = (hookName, context) => {
-  const options = formats.FORMATS.map(({id, label}) => (
+  const options = formats.formatsFor('copy').map(({id, label}) => (
     `<option value="${escapeHtml(id)}" data-l10n-id="ep_polypaste.format.${escapeHtml(id)}">` +
     `${escapeHtml(label)}</option>`)).join('');
   context.content += `
@@ -63,7 +63,7 @@ exports.eejsBlockMySettingsDropdowns = (hookName, context) => {
 
 exports.clientVars = async (hookName, context) => {
   const config = getConfig();
-  const defaultFormat = formats.findFormat(config.defaultFormat) || formats.DEFAULT_FORMAT;
+  const defaultFormat = formats.findFormat(config.defaultFormat, 'copy') || formats.DEFAULT_FORMAT;
   return {ep_polypaste: {defaultFormat}};
 };
 
@@ -78,9 +78,9 @@ const EXPORT_PREFIX = 'ep-polypaste-';
 
 const exportPad = async (req, res, next) => {
   const {type} = req.params;
-  const format = type.startsWith(EXPORT_PREFIX) && formats.findFormat(type.slice(EXPORT_PREFIX.length));
-  // There's no point to "native" here; Etherpad's own export is /export/txt.
-  if (!format || format === 'native') return next();
+  const format = type.startsWith(EXPORT_PREFIX) &&
+      formats.findFormat(type.slice(EXPORT_PREFIX.length), 'url');
+  if (!format) return next();
 
   // Check access, validate the revision, and find the pad the way Etherpad's
   // own export route does.

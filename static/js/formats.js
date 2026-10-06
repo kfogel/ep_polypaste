@@ -38,34 +38,45 @@
 //     - bold, italic, underline, strikethrough     (core)
 //     - hyperlink = <url>                          (ep_hyperlinked_text)
 
-// The formats offered to users, in menu order, with the usual file
-// extension for each.  `id` values are stored in the browser and
-// appear in export URLs, so don't change them lightly.
+// The formats, in menu order.  Each has an id, a label, the usual
+// file extension for it, and short aliases that can be used in place
+// of the id.  Formats with `only` set are offered in just one place:
+// 'copy' is the copy-and-paste menu in the browser, and 'cli' is the
+// ep-export command.  The rest are offered everywhere, including the
+// export URLs.
 const FORMATS = [
-  {id: 'tabs', label: 'Plain text, TAB-indented', ext: 'txt'},
-  {id: 'tabs-markers', label: 'Plain text, TAB-indented, with bullets/numbers', ext: 'txt'},
-  {id: 'org', label: 'Org Mode', ext: 'org'},
-  {id: 'markdown', label: 'Markdown', ext: 'md'},
-  {id: 'typst', label: 'Typst', ext: 'typ'},
-  {id: 'latex', label: 'LaTeX', ext: 'tex'},
-  {id: 'asciidoc', label: 'AsciiDoc', ext: 'adoc'},
-  {id: 'rst', label: 'reStructuredText', ext: 'rst'},
-  {id: 'mediawiki', label: 'MediaWiki', ext: 'wiki'},
-  {id: 'html', label: 'HTML source', ext: 'html'},
-  {id: 'native', label: 'Browser default (no conversion)', ext: 'txt'},
+  {id: 'plaintext-tabs-nesting', label: 'Plain text, TAB-indented', ext: 'txt',
+    aliases: ['txt-tabs']},
+  {id: 'plaintext-tabs-markers-nesting', label: 'Plain text, TAB-indented, with bullets/numbers',
+    ext: 'txt', aliases: ['txt-tabs-markers']},
+  {id: 'org', label: 'Org Mode', ext: 'org', aliases: []},
+  {id: 'markdown', label: 'Markdown', ext: 'md', aliases: ['md']},
+  {id: 'typst', label: 'Typst', ext: 'typ', aliases: ['typ']},
+  {id: 'latex', label: 'LaTeX', ext: 'tex', aliases: ['tex']},
+  {id: 'asciidoc', label: 'AsciiDoc', ext: 'adoc', aliases: ['adoc']},
+  {id: 'rst', label: 'reStructuredText', ext: 'rst', aliases: []},
+  {id: 'mediawiki', label: 'MediaWiki', ext: 'wiki', aliases: ['wiki']},
+  {id: 'html', label: 'HTML source', ext: 'html', aliases: []},
+  // The plugin stays out of the way, so the browser copies the pad's text
+  // as it normally would, with list nesting flattened.
+  {id: 'plaintext-flat', label: 'Browser default (no conversion)', ext: 'txt',
+    aliases: ['txt-flat'], only: 'copy'},
+  // Etherpad's own plain-text export (/p/PAD/export/txt), as is.
+  {id: 'plaintext-etherpad', label: 'Etherpad\'s own plain-text export (no conversion)', ext: 'txt',
+    aliases: ['txt-etherpad'], only: 'cli'},
 ];
 
-const DEFAULT_FORMAT = 'tabs';
+const DEFAULT_FORMAT = 'plaintext-tabs-nesting';
 
-const isFormat = (id) => FORMATS.some((f) => f.id === id);
+// Returns the formats offered in `where`: 'copy', 'cli', or 'url' (the
+// export URLs).
+const formatsFor = (where) => FORMATS.filter((f) => !f.only || f.only === where);
 
-// Returns the id of the format called `name`, which is either a
-// format's id or its file extension (if no other format uses that
-// extension), or null if there is no such format.
-const findFormat = (name) => {
-  if (isFormat(name)) return name;
-  const matches = FORMATS.filter((f) => f.ext === name);
-  return matches.length === 1 ? matches[0].id : null;
+// Returns the id of the format offered in `where` whose id or alias
+// is `name`, or null if there is no such format.
+const findFormat = (name, where) => {
+  const format = formatsFor(where).find((f) => f.id === name || f.aliases.includes(name));
+  return format ? format.id : null;
 };
 
 const extensionOf = (id) => (FORMATS.find((f) => f.id === id) || {}).ext;
@@ -863,8 +874,8 @@ const renderHtml = (model, pretty) => {
 // ---------------------------------------------------------------------------
 
 const RENDERERS = {
-  'tabs': (model) => renderTabs(model, false),
-  'tabs-markers': (model) => renderTabs(model, true),
+  'plaintext-tabs-nesting': (model) => renderTabs(model, false),
+  'plaintext-tabs-markers-nesting': (model) => renderTabs(model, true),
   'markdown': renderMarkdown,
   'org': renderOrg,
   'asciidoc': renderAsciidoc,
@@ -887,7 +898,7 @@ const renderClipboardHtml = (model) => renderHtml(model, false);
 module.exports = {
   FORMATS,
   DEFAULT_FORMAT,
-  isFormat,
+  formatsFor,
   findFormat,
   extensionOf,
   extractSelection,

@@ -44,7 +44,7 @@ let serverDefault = formats.DEFAULT_FORMAT;
 const getFormat = () => {
   try {
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (formats.isFormat(stored)) return stored;
+    if (formats.findFormat(stored, 'copy') === stored) return stored;
   } catch (err) { /* storage unavailable */ }
   return serverDefault;
 };
@@ -67,7 +67,7 @@ const docFromRep = (rep) => ({
 
 const handleCopyOrCut = (evt, ace, isCut, readOnly) => {
   const format = getFormat();
-  if (format === 'native' || !evt.clipboardData) return;
+  if (format === 'plaintext-flat' || !evt.clipboardData) return;
 
   let model = null;
   let range = null;
@@ -119,13 +119,13 @@ const setUpSettingsMenu = () => {
   if ($select.niceSelect) $select.niceSelect('update');
   $select.on('change', () => {
     const id = $select.val();
-    if (formats.isFormat(id)) setFormat(id);
+    if (formats.findFormat(id, 'copy') === id) setFormat(id);
   });
 };
 
 exports.postAceInit = (hookName, {ace, clientVars}) => {
   const cv = (clientVars && clientVars.ep_polypaste) || {};
-  if (formats.isFormat(cv.defaultFormat)) serverDefault = cv.defaultFormat;
+  if (formats.findFormat(cv.defaultFormat, 'copy')) serverDefault = cv.defaultFormat;
   const readOnly = !!(clientVars && clientVars.readonly);
 
   setUpSettingsMenu();

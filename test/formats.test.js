@@ -19,6 +19,10 @@ const OUTLINE = [
   {text: 'Veg', list: 'bullet1'},
 ];
 
+// The formats that formats.js renders (the others pass text through).
+const RENDERED = f.FORMATS.map(({id}) => id)
+    .filter((id) => !['plaintext-flat', 'plaintext-etherpad'].includes(id));
+
 describe('parseAline', () => {
   it('parses attributes, newlines and base-36 counts', () => {
     assert.deepEqual(f.parseAline('*0*a+1+z*1|1+1'), [
@@ -40,7 +44,7 @@ describe('extractSelection', () => {
     // Columns count the line marker, so "world" is [7, 12).
     const model = f.extractSelection(doc, [0, 7], [0, 12]);
     assert.equal(model.inline, true);
-    assert.equal(f.render('tabs-markers', model), 'world');
+    assert.equal(f.render('plaintext-tabs-markers-nesting', model), 'world');
     assert.equal(f.render('markdown', model), '**world**');
   });
 
@@ -53,7 +57,7 @@ describe('extractSelection', () => {
   it('ends with a newline when the selection ends at the start of a line', () => {
     const doc = makeDoc([{text: 'a', list: 'bullet1'}, {text: 'b', list: 'bullet2'}, 'c']);
     const model = f.extractSelection(doc, [0, 0], [2, 0]);
-    assert.equal(f.render('tabs-markers', model), '- a\n\t- b\n');
+    assert.equal(f.render('plaintext-tabs-markers-nesting', model), '- a\n\t- b\n');
   });
 
   it('numbers items as Etherpad does, counting from the top of the list', () => {
@@ -67,38 +71,38 @@ describe('extractSelection', () => {
       {text: 'bullet', list: 'bullet1'},
       {text: 'c', list: 'number1'},
     ]);
-    assert.equal(f.render('tabs-markers', f.extractSelection(doc, [2, 0], [6, 2])),
+    assert.equal(f.render('plaintext-tabs-markers-nesting', f.extractSelection(doc, [2, 0], [6, 2])),
         '\t2. a2\n2. b\n\t1. b1\n- bullet\n1. c');
   });
 
   it('numbers items with no start attribute', () => {
-    assert.equal(renderAll('tabs-markers', [
+    assert.equal(renderAll('plaintext-tabs-markers-nesting', [
       {text: 'x', list: 'number1'},
       {text: 'y', list: 'number1'},
     ]), '1. x\n2. y');
   });
 });
 
-describe('tabs', () => {
+describe('plaintext-tabs-nesting', () => {
   it('indents with TABs relative to the shallowest selected level', () => {
-    assert.equal(renderAll('tabs', OUTLINE.slice(1, 5)),
+    assert.equal(renderAll('plaintext-tabs-nesting', OUTLINE.slice(1, 5)),
         'apple\n\tstep one\n\tstep two\npear');
   });
 
   it('preserves skipped levels', () => {
-    assert.equal(renderAll('tabs', [
+    assert.equal(renderAll('plaintext-tabs-nesting', [
       {text: 'a', list: 'bullet1'},
       {text: 'b', list: 'bullet3'},
     ]), 'a\n\t\tb');
   });
 
-  it('adds markers in tabs-markers', () => {
-    assert.equal(renderAll('tabs-markers', OUTLINE),
+  it('adds markers in plaintext-tabs-markers-nesting', () => {
+    assert.equal(renderAll('plaintext-tabs-markers-nesting', OUTLINE),
         '- Fruit\n\t- apple\n\t\t1. step one\n\t\t2. step two\n\t- pear\n- Veg');
   });
 
   it('leaves non-list lines alone', () => {
-    assert.equal(renderAll('tabs', ['intro', {text: 'a', list: 'indent2'}, '', 'end']),
+    assert.equal(renderAll('plaintext-tabs-nesting', ['intro', {text: 'a', list: 'indent2'}, '', 'end']),
         'intro\na\n\nend');
   });
 });
@@ -267,7 +271,7 @@ describe('link padding', () => {
   const LINKED = {text: `see ${Z}site${Z} now`, spans: [[5, 9, {hyperlink: 'https://x.org/'}]]};
 
   it('drops the zero-width spaces around a link', () => {
-    assert.equal(renderAll('tabs', [LINKED]), 'see site now');
+    assert.equal(renderAll('plaintext-tabs-nesting', [LINKED]), 'see site now');
     assert.equal(renderAll('markdown', [LINKED]), 'see [site](<https://x.org/>) now');
     const doc = makeDoc([LINKED]);
     assert.equal(f.renderClipboardHtml(f.extractSelection(doc, ...selectAll(doc))),
@@ -276,12 +280,12 @@ describe('link padding', () => {
 
   it('drops padding even when the selection leaves out the link', () => {
     const doc = makeDoc([LINKED]);
-    assert.equal(f.render('tabs', f.extractSelection(doc, [0, 9], [0, 14])), ' now');
-    assert.equal(f.render('tabs', f.extractSelection(doc, [0, 0], [0, 5])), 'see ');
+    assert.equal(f.render('plaintext-tabs-nesting', f.extractSelection(doc, [0, 9], [0, 14])), ' now');
+    assert.equal(f.render('plaintext-tabs-nesting', f.extractSelection(doc, [0, 0], [0, 5])), 'see ');
   });
 
   it('drops padding around a link at the start of a list item', () => {
-    assert.equal(renderAll('tabs-markers', [
+    assert.equal(renderAll('plaintext-tabs-markers-nesting', [
       {text: `${Z}site${Z}`, list: 'bullet1', spans: [[1, 5, {hyperlink: 'https://x.org/'}]]},
     ]), '- site');
   });
@@ -291,18 +295,18 @@ describe('link padding', () => {
     // the link text has the hyperlink attribute.
     const doc = makeDoc([{text: `a ${Z}${Z}link${Z}${Z}?`, spans: [[4, 9, {hyperlink: 'https://x.org/'}]]}]);
     const model = f.extractSelection(doc, ...selectAll(doc));
-    assert.equal(f.render('tabs', model), 'a link?');
+    assert.equal(f.render('plaintext-tabs-nesting', model), 'a link?');
     assert.equal(f.render('org', model), 'a [[https://x.org/][link]]?');
     assert.ok(!f.renderClipboardHtml(model).includes(Z));
   });
 
   it('keeps zero-width spaces that are not next to a link', () => {
-    assert.equal(renderAll('tabs', [`a${Z}b`]), `a${Z}b`);
+    assert.equal(renderAll('plaintext-tabs-nesting', [`a${Z}b`]), `a${Z}b`);
   });
 
   it('leaves no padding in any format', () => {
     for (const {id} of f.FORMATS) {
-      if (id === 'native') continue;
+      if (!RENDERED.includes(id)) continue;
       assert.ok(!renderAll(id, [LINKED]).includes(Z), id);
     }
   });
@@ -311,7 +315,7 @@ describe('link padding', () => {
 describe('every format', () => {
   it('handles an empty-text list item and a lone blank line', () => {
     for (const {id} of f.FORMATS) {
-      if (id === 'native') continue;
+      if (!RENDERED.includes(id)) continue;
       assert.doesNotThrow(() => renderAll(id, [{text: '', list: 'bullet1'}, '', 'x']), id);
     }
   });

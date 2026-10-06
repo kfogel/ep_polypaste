@@ -1,7 +1,7 @@
 {
     "ep_polypaste.settings.format": "Copy→Paste format:",
-  "ep_polypaste.format.tabs": "Plain text, TAB-indented",
-  "ep_polypaste.format.tabs-markers": "Plain text, TAB-indented, with bullets/numbers",
+  "ep_polypaste.format.plaintext-tabs-nesting": "Plain text, TAB-indented",
+  "ep_polypaste.format.plaintext-tabs-markers-nesting": "Plain text, TAB-indented, with bullets/numbers",
   "ep_polypaste.format.markdown": "Markdown",
   "ep_polypaste.format.org": "Org Mode",
   "ep_polypaste.format.asciidoc": "AsciiDoc",
@@ -10,5 +10,5 @@
   "ep_polypaste.format.latex": "LaTeX",
   "ep_polypaste.format.typst": "Typst",
   "ep_polypaste.format.html": "HTML source",
-  "ep_polypaste.format.native": "Browser default (no conversion)"
+  "ep_polypaste.format.plaintext-flat": "Browser default (no conversion)"
 }

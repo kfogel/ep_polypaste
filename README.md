@@ -130,13 +130,25 @@ by default.  To change this default, add this to Etherpad's
   }
 ```
 
-Valid values: `tabs`, `tabs-markers`, `markdown`, `org`, `asciidoc`,
-`rst`, `mediawiki`, `latex`, `typst`, `html`, `native`.
+Valid values, with short aliases in parentheses:
 
-Here, in the export URLs, and in `ep-export` (both described below),
-a format can also be named by its usual file extension: `md` for
-`markdown`, `typ` for `typst`, `tex` for `latex`, `adoc` for
-`asciidoc`, and `wiki` for `mediawiki`.
+* `plaintext-tabs-nesting` (`txt-tabs`)
+* `plaintext-tabs-markers-nesting` (`txt-tabs-markers`)
+* `org`
+* `markdown` (`md`)
+* `typst` (`typ`)
+* `latex` (`tex`)
+* `asciidoc` (`adoc`)
+* `rst`
+* `mediawiki` (`wiki`)
+* `html`
+* `plaintext-flat` (`txt-flat`): the browser's default copying, which
+  flattens list nesting.  The plugin stays out of the way.
+
+The same names and aliases work in the export URLs and in `ep-export`
+(both described below), except that `plaintext-flat` only makes sense
+in the browser.  `ep-export` has one format of its own,
+`plaintext-etherpad` (`txt-etherpad`).
 
 ## Export URLs
 
@@ -155,8 +167,8 @@ export at a URL similar to Etherpad's own export URLs (such as
 The response is a download of the whole pad (named, e.g.,
 `meeting-notes.org`), with the same access rules as Etherpad's own
 exports; read-only pad IDs work too.  Note that there is no
-`ep-polypaste-native`, since that would be the same as the
-`/export/txt` that Etherpad already offers.
+`ep-polypaste-plaintext-etherpad`, since that would be the same as
+the `/export/txt` that Etherpad already offers.
 
 We use the `ep-polypaste-` prefix to keep these names from colliding
 with new export types that upstream Etherpad might add in the future.
@@ -178,8 +190,9 @@ The second guesses the format from the output file's extension.  The
 third writes to stdout.  Run `ep-export --help` for all the options,
 and `ep-export --list-formats` for the formats.  Some details:
 
-* The `native` format is Etherpad's own plain-text export (the pad's
-  **Import/Export → Plain text** download), saved without conversion.
+* The `plaintext-etherpad` format (alias `txt-etherpad`) is
+  Etherpad's own plain-text export (the pad's **Import/Export → Plain
+  text** download), saved without conversion.
 
 * `-r N` (or a timeslider URL ending in `#N`) saves revision N of the
   pad instead of the latest.
